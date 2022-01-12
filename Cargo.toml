@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "r_ecipe_s_backend",
+    "r_ecipe_s_frontend",
+    "r_ecipe_s_model",
+]
+
