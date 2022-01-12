@@ -1,0 +1,14 @@
+[package]
+name = "r_ecipe_s_frontend"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1.0.133"
+perseus = { version = "0.3.1", features = [ "hydrate" ] }
+r_ecipe_s_model = { path = "../r_ecipe_s_model" }
+serde_json = "1.0.74"
+sycamore = "0.7.1"
+ureq = "2"

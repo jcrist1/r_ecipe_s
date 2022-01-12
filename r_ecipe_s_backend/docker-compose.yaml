@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:14.1-alpine3.15
+    ports: 
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: r_ecipe_s_user
+      POSTGRES_DB: r_ecipe_s
+
