@@ -1,9 +1,11 @@
 use crate::db::DBAccess;
 use actix_web::{dev::*, http::header, web::Data, *};
 use futures_util::{StreamExt, TryStreamExt};
+use markdown::to_html;
 use r_ecipe_s_model::{Ingredient, Recipe};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::types::Json;
+use sqlx::{Executor, FromRow};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 
@@ -15,6 +17,8 @@ pub enum Error {
     Serde(#[from] serde_json::Error),
     #[error("Database Error: {0}")]
     DB(#[from] sqlx::Error),
+    #[error("Parse in error: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -24,6 +28,7 @@ impl ResponseError for Error {
             Error::Fail => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::Serde(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::DB(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+            Error::ParseInt(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -65,7 +70,7 @@ impl RecipeRep {
 }
 
 impl RecipeAccess {
-    async fn get_all(&self) -> Result<Vec<RecipeRep>> {
+    async fn get_all(&self) -> Result<Vec<Recipe>> {
         let data = sqlx::query_as(
             r#"
 SELECT
@@ -78,7 +83,14 @@ FROM recipes"#,
         )
         .fetch(self.db_access.get_pool())
         .map(
-            |rep_res: std::result::Result<RecipeRep, _>| -> Result<RecipeRep> { Ok(rep_res?) }, //.model()) },
+            |rep_res: std::result::Result<RecipeRep, _>| -> Result<Recipe> {
+                let recipe = rep_res?.model();
+                let recipe = Recipe {
+                    description: to_html(&recipe.description),
+                    ..recipe
+                };
+                Ok(recipe)
+            },
         )
         .try_collect::<Vec<_>>()
         .await;
@@ -110,6 +122,32 @@ INSERT INTO recipes (
         .await?;
         Ok(rec.id)
     }
+
+    async fn get_by_id(&self, id: i64) -> Result<Option<Recipe>> {
+        let ret = sqlx::query_as!(
+            RecipeRep,
+            r#"
+SELECT
+    id, 
+    name, 
+    ingredients as "ingredients: Json<Vec<Ingredient>>", 
+    description, 
+    liked  
+FROM recipes
+WHERE id = $1"#,
+            id,
+        )
+        .fetch_optional(self.db_access.get_pool())
+        .await?
+        .map(|rep| {
+            let recipe = rep.model();
+            Recipe {
+                description: to_html(&recipe.description),
+                ..recipe
+            }
+        });
+        Ok(ret)
+    }
 }
 
 impl RecipeAccess {
@@ -120,7 +158,7 @@ impl RecipeAccess {
     }
 }
 
-#[get("/recipes")]
+#[get("api/v1/recipes")]
 pub(crate) async fn get_all(recipe_access: Data<RecipeAccess>) -> Result<HttpResponse> {
     let data = recipe_access.get_all().await?;
 
@@ -131,7 +169,20 @@ pub(crate) async fn get_all(recipe_access: Data<RecipeAccess>) -> Result<HttpRes
         .body(body))
 }
 
-#[put("/recipes")]
+#[get("api/v1/recipes/{id}")]
+pub(crate) async fn get(id: String, recipe_access: Data<RecipeAccess>) -> Result<HttpResponse> {
+    let id = id.parse();
+    let id = id?;
+    let data = recipe_access.get_by_id(id).await?;
+
+    let body = serde_json::to_string(&data)?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(header::ContentType::json())
+        .body(body))
+}
+
+#[put("api/v1/recipes")]
 pub(crate) async fn put(
     recipe_access: Data<RecipeAccess>,
     form: web::Json<Recipe>,
@@ -143,7 +194,7 @@ pub(crate) async fn put(
         .body(serde_json::to_string(&id)?))
 }
 
-#[post("/recipes/{id}")]
+#[post("api/v1/recipes/{id}")]
 pub(crate) async fn update(
     recipe_access: Data<RecipeAccess>,
     form: web::Json<Recipe>,
