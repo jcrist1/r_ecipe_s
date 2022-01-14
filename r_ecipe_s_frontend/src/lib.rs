@@ -6,7 +6,8 @@ use sycamore::view;
 define_app! {
     templates: [
         templates::index::get_template::<G>(),
-        templates::about::get_template::<G>()
+        templates::about::get_template::<G>(),
+        templates::recipe::get_template::<G>()
     ],
     error_pages: error_pages::get_error_pages(),
     static_aliases: {

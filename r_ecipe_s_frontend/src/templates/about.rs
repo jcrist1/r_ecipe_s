@@ -2,12 +2,35 @@ use perseus::*;
 use r_ecipe_s_model::Recipe;
 use serde::{Deserialize, Serialize};
 use sycamore::flow::{Indexed, IndexedProps};
-use sycamore::prelude::{component, view, Html, Keyed, KeyedProps, Signal, SsrNode, View};
+use sycamore::prelude::*;
 
 #[perseus::template(AboutPage)]
 #[component(AboutPage<G>)]
-pub fn about_page(recipes: Vec<Recipe>) -> View<G> {
-    let recipe_signal = Signal::new(recipes);
+pub fn about_page() -> View<G> {
+    let recipe_signal = Signal::new(vec![]);
+    if G::IS_BROWSER {
+        // Spawn a `Future` on this thread to fetch the data (`spawn_local` is re-exported from `wasm-bindgen-futures`)
+        // Don't worry, this doesn't need to be sent to JavaScript for execution
+        //
+        // We want to access the `message` `Signal`, so we'll clone it in (and then we need `move` because this has to be `'static`)
+        perseus::spawn_local(cloned!(recipe_signal => async move {
+                // This interface may seem weird, that's because it wraps the browser's Fetch API
+                // We request from a local path here because of CORS restrictions (see the book)
+                let body = reqwasm::http::Request::get("/api/v1/recipes")
+                    .send()
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap();
+
+        let recipes = serde_json::from_str::<Vec<Recipe>>(&body).map_err(|err| perseus::GenericErrorWithCause {
+            error: Box::new(err),
+            cause: ErrorCause::Client(None),
+        }).expect("err");
+                recipe_signal.set(recipes);
+            }));
+    }
     view! {
             Indexed(IndexedProps{
                 iterable: recipe_signal.handle(),
@@ -27,7 +50,7 @@ pub fn about_page(recipes: Vec<Recipe>) -> View<G> {
                                 },
                             })
                         }
-                        p { (x.description) }
+                        div(dangerously_set_inner_html=&x.description)
                     }
         }
         }
@@ -46,31 +69,5 @@ pub fn head() -> View<SsrNode> {
 }
 
 pub fn get_template<G: Html>() -> Template<G> {
-    Template::new("about")
-        .template(about_page)
-        .request_state_fn(get_request_state)
-        .head(head)
-}
-
-#[perseus::autoserde(request_state)]
-pub async fn get_request_state(
-    _path: String,
-    _locale: String,
-    _req: Request,
-) -> RenderFnResultWithCause<Vec<Recipe>> {
-    let body = ureq::get("http://localhost:8000/recipes")
-        .call()
-        .map_err(|err| perseus::GenericErrorWithCause {
-            error: Box::new(err),
-            cause: ErrorCause::Server(None),
-        })?
-        .into_string()
-        .map_err(|err| perseus::GenericErrorWithCause {
-            error: Box::new(err),
-            cause: ErrorCause::Client(None),
-        })?;
-    serde_json::from_str::<Vec<Recipe>>(&body).map_err(|err| perseus::GenericErrorWithCause {
-        error: Box::new(err),
-        cause: ErrorCause::Client(None),
-    })
+    Template::new("about").template(about_page).head(head)
 }

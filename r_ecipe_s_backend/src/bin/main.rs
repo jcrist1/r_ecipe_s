@@ -60,11 +60,8 @@ async fn main() -> Result<()> {
             .max_age(3600);
         let recipe_access = Data::new(RecipeAccess::new(&db_access));
         App::new()
-            .configure(block_on(configurer(get_props())))
-            .wrap(cors)
-            .route("/", web::get().to(greet))
             .bind_recipe_routes(recipe_access)
-            .route("api/v1/{name}", web::get().to(greet))
+            .configure(block_on(configurer(get_props())))
         // .configure(block_on(configurer(todo!()))) // This could then be used to serve perseus
         // // stuff once figureed out
     })
