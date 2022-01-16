@@ -19,6 +19,7 @@ clap = "3.0.5"
 futures = "0.3"
 futures-util = "0.3.19"
 r_ecipe_s_model = { path = "../r_ecipe_s_model/"}
+r_ecipe_s_frontend = {path = "../r_ecipe_s_frontend/"}
 markdown = "0.3"
 perseus-engine = {path = "../r_ecipe_s_frontend/.perseus/"}
 perseus = "0.3.1"

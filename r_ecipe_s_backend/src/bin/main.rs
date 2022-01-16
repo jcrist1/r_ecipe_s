@@ -4,17 +4,18 @@ use futures::executor::block_on;
 use perseus::internal::i18n::TranslationsManager;
 use perseus::internal::serve::{ServerOptions, ServerProps};
 use perseus::plugins::PluginAction;
-use perseus::stores::MutableStore;
+use perseus::stores::{FsMutableStore, MutableStore};
 use perseus::SsrNode;
 use perseus_actix_web::configurer;
 use std::sync::Arc;
 
 use perseus_engine::app::{
-    get_app_root, get_error_pages_contained, get_immutable_store, get_locales, get_mutable_store,
-    get_plugins, get_static_aliases, get_templates_map_atomic_contained, get_translations_manager,
+    get_app_root, get_error_pages_contained, get_immutable_store, get_locales, get_plugins,
+    get_static_aliases, get_templates_map_atomic_contained, get_translations_manager,
 };
 use r_ecipe_s_backend::app_config;
 use r_ecipe_s_backend::db;
+use r_ecipe_s_frontend::get_mutable_store;
 use std::env;
 use std::fs;
 use thiserror::Error as ThisError;
@@ -117,7 +118,7 @@ fn get_props() -> ServerProps<impl MutableStore, impl TranslationsManager> {
     ServerProps {
         opts,
         immutable_store,
-        mutable_store: get_mutable_store(),
+        mutable_store: FsMutableStore::new("dist/mutable".to_string()), // get_mutable_store(),
         translations_manager: block_on(get_translations_manager()),
     }
 }

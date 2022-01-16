@@ -12,3 +12,6 @@ r_ecipe_s_model = { path = "../r_ecipe_s_model" }
 serde_json = "1.0.74"
 sycamore = "0.7.1"
 reqwasm = "0.3.1"
+pulldown-cmark = "0.9"
+lazy_static = "1.4"
+web-sys = {version = "0.3.55", features = ["InputEvent", "KeyboardEvent", "Location", "Storage"]}

@@ -41,7 +41,10 @@ pub trait RecipeService {
 impl<T> RecipeService for App<T> {
     type ServiceType = Self;
     fn bind_recipe_routes(self, recipe_access: Data<RecipeAccess>) -> Self::ServiceType {
-        self.app_data(recipe_access).service(get_all).service(put)
+        self.app_data(recipe_access)
+            .service(get_all)
+            .service(get)
+            .service(put)
     }
 }
 
@@ -70,26 +73,23 @@ impl RecipeRep {
 }
 
 impl RecipeAccess {
-    async fn get_all(&self) -> Result<Vec<Recipe>> {
-        let data = sqlx::query_as(
+    async fn get_all(&self) -> Result<Vec<(i64, Recipe)>> {
+        let data = sqlx::query_as!(
+            RecipeRep,
             r#"
 SELECT
     id, 
     name, 
-    ingredients, 
+    ingredients as "ingredients: Json<Vec<Ingredient>>", 
     description, 
     liked  
 FROM recipes"#,
         )
         .fetch(self.db_access.get_pool())
         .map(
-            |rep_res: std::result::Result<RecipeRep, _>| -> Result<Recipe> {
-                let recipe = rep_res?.model();
-                let recipe = Recipe {
-                    description: to_html(&recipe.description),
-                    ..recipe
-                };
-                Ok(recipe)
+            |rep_res: std::result::Result<RecipeRep, _>| -> Result<(i64, Recipe)> {
+                let recipe = rep_res?;
+                Ok((recipe.id, recipe.model()))
             },
         )
         .try_collect::<Vec<_>>()
@@ -170,9 +170,11 @@ pub(crate) async fn get_all(recipe_access: Data<RecipeAccess>) -> Result<HttpRes
 }
 
 #[get("api/v1/recipes/{id}")]
-pub(crate) async fn get(id: String, recipe_access: Data<RecipeAccess>) -> Result<HttpResponse> {
-    let id = id.parse();
-    let id = id?;
+pub(crate) async fn get(
+    path: web::Path<i64>,
+    recipe_access: Data<RecipeAccess>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
     let data = recipe_access.get_by_id(id).await?;
 
     let body = serde_json::to_string(&data)?;
