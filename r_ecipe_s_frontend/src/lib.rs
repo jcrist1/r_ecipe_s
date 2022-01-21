@@ -29,6 +29,8 @@ define_app! {
     error_pages: error_pages::get_error_pages(),
     static_aliases: {
         "/test.txt" => "static/test.txt",
-        "/index.css" => "static/index.css"
+        "/index.css" => "static/index.css",
+        "/x_circle.svg" => "static/x-circle.svg",
+        "/plus_circle.svg" => "static/plus-circle.svg"
     }
 }

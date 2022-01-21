@@ -48,7 +48,7 @@ pub fn recipe_page() -> View<G> {
     view! {
     div(class = "pure-u-1 pure-u-md-1-2 pure-u-lg-1-2") {
         div(class = "l-box") {
-                    p { (recipe_signal_2.get().name) }
+                    div(class = "recipe-title") { (recipe_signal_2.get().name) }
                     ul {
                         Indexed(IndexedProps {
                             iterable: ingredient_signal_2.handle(),

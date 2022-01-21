@@ -1,8 +1,16 @@
 html,
 body {
+    font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-weight: 300;
     overflow:hidden;
-    background: #AADDFF;
+    background: #FAF5F2;
     height:100%
+}
+
+.header {
+    font-weight: 400;
+    font-size: 24pt;
+    padding: 10pt;
 }
 
 .hidden {
@@ -12,9 +20,81 @@ body {
 .shown {
     display:block;
 }
+.plus-button {
+    padding: 1pt;
+    align: center;
+    float: center;
+    margin: 5pt;
+    background-image: url(/plus_circle.svg);
+    background-size: 100%;
+    border-style: solid;
+    border-color: #BBBBBB;
+    border: 1pt;
+    height: 20pt;
+    width: 20pt;
+    z-index: 1;
+}
+
+.selected {
+    position: absolute;
+    height: 800pt;
+    width: 800pt;
+    left: 10pt;
+    top: 10pt;
+    float: initial;
+    overflow: scroll;
+    z-index: 100;
+}
+
+.de-selector {
+    position: absolute;
+    height: 100%;
+    width: 100%;
+    z-index: 10;
+}
+
+
+.unselected {
+    overflow: none;
+}
+.close-button {
+    padding: 1pt;
+    align: center;
+    float: right;
+    margin: 5pt;
+    background-image: url(/x_circle.svg);
+    background-size: 100%;
+    border-style: solid;
+    border-color: #BBBBBB;
+    border: 1pt;
+    height: 10pt;
+    width: 10pt;
+    z-index: 1;
+}
 
 .recipe-tile {
-    background: #BBDDEE;
-    border: 1px;
-    border-color: #AAAAAA;
+    background: #FAFAFF;
+    border: 1pt;
+    border-color: #DADADF;
+    border-style: solid;
+    margin: 4pt;
+    box-shadow: 5px 5px 5px rgba(50, 50, 50, 0.1);
+    border-radius: 4px;
+}
+
+.recipe-title {
+    background: #EAEAE0;
+    border-bottom: solid;
+    border-color: #C0C0C0;
+    border-width: 1pt;
+    padding: 5pt;
+    margin: 0pt;
+}
+
+.recipe-ingredients {
+    padding: 20pt;
+}
+
+.recipe-description {
+    padding: 20pt;
 }
