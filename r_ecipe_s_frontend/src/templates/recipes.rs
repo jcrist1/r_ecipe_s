@@ -1,5 +1,3 @@
-use std::pin::Pin;
-
 use crate::auto_form_component::*;
 use crate::util::markdown_to_html;
 use perseus::*;
@@ -10,6 +8,23 @@ use sycamore::prelude::*;
 use sycamore::rt::{JsCast, JsValue};
 use web_sys::{Event, HtmlInputElement, HtmlTextAreaElement};
 
+async fn get_recipes_at_offset(
+    offset: u32,
+) -> Result<Vec<RecipeWithId>, perseus::GenericErrorWithCause> {
+    let body = reqwasm::http::Request::get(&format!("/api/v1/recipes?offset={offset}"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    serde_json::from_str::<Vec<RecipeWithId>>(&body).map_err(|err| perseus::GenericErrorWithCause {
+        error: Box::new(err),
+        cause: ErrorCause::Client(None),
+    })
+}
+
 #[perseus::template(RecipesPage)]
 #[component(RecipesPage<G>)]
 pub fn recipes_page() -> View<G> {
@@ -18,6 +33,7 @@ pub fn recipes_page() -> View<G> {
         page: Signal::new(PageState { offset: 0 }),
     };
     let selected = raw_state.selected;
+    let page = raw_state.page;
     let recipes_signal = Signal::new(vec![]);
     if G::IS_BROWSER {
         // Spawn a `Future` on this thread to fetch the data (`spawn_local` is re-exported from `wasm-bindgen-futures`)
@@ -25,24 +41,12 @@ pub fn recipes_page() -> View<G> {
         //
         // We want to access the `message` `Signal`, so we'll clone it in (and then we need `move` because this has to be `'static`)
         perseus::spawn_local(cloned!((recipes_signal) => async move {
-            // This interface may seem weird, that's because it wraps the browser's Fetch API
-            // We request from a local path here because of CORS restrictions (see the book)
-            let body = reqwasm::http::Request::get("/api/v1/recipes")
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-
-            let recipes = serde_json::from_str::<Vec<RecipeWithId>>(&body).map_err(|err| perseus::GenericErrorWithCause {
-                error: Box::new(err),
-                cause: ErrorCause::Client(None),
-            })
-            .expect("err")
-                .into_iter()
-                .map(|recipe| recipe.signal())
-                .collect::<Vec<_>>();
+            let recipes = get_recipes_at_offset(0).
+                await
+                .expect("err")
+                    .into_iter()
+                    .map(|recipe| recipe.signal())
+                    .collect::<Vec<_>>();
             recipes_signal.set(recipes);
         }));
     }
@@ -86,11 +90,14 @@ pub fn recipes_page() -> View<G> {
     });
 
     let selected_for_recipes = selected.clone();
+    let recipes_for_left = recipes_signal.clone();
+    let recipes_for_right = recipes_signal.clone();
+    let page_right = page.clone();
     view! {
         div(class = "header") {
             span {"RecipeS – "}
-            span {"Left – "}
-            span {" Right"}
+            (cloned!((page, recipes_for_left) => left_button(page, recipes_for_left)))
+            (cloned!((page_right, recipes_for_right) => right_button(page_right, recipes_for_right)))
         }
 
         (cloned!((selected) => viewer(selected)))
@@ -102,6 +109,74 @@ pub fn recipes_page() -> View<G> {
         })
         div(class = "pure-u-1 pure-u-md-1-2 pure-u-lg-1-4 unselected", ) {
             div(class = "plus-button", on:click = create_recipe, dangerously_set_inner_html="&nbsp;")
+        }
+    }
+}
+
+pub fn right_button<G: sycamore::generic_node::GenericNode + perseus::Html>(
+    selected: Signal<PageState>,
+    recipes_signal: Signal<Vec<Signal<RecipeSignal>>>,
+) -> View<G> {
+    let click_right = cloned!((selected, recipes_signal) => move |_: Event| {
+        let current_offset = selected.get().offset;
+        let new_offset = current_offset + 1;
+        if G::IS_BROWSER {
+            perseus::spawn_local(cloned!((selected, recipes_signal) => async move {
+
+                let recipes = get_recipes_at_offset(new_offset).
+                    await
+                    .expect("err")
+                        .into_iter()
+                        .map(|recipe| recipe.signal())
+                        .collect::<Vec<_>>();
+
+                recipes_signal.set(recipes);
+
+                selected.set(PageState{
+                    offset: new_offset
+                });
+
+            }));
+        }
+    });
+    view! {
+        span(on:click=click_right) { "(Right)"}
+    }
+}
+
+pub fn left_button<G: sycamore::generic_node::GenericNode + perseus::Html>(
+    selected: Signal<PageState>,
+    recipes_signal: Signal<Vec<Signal<RecipeSignal>>>,
+) -> View<G> {
+    let click_left = cloned!((selected, recipes_signal) => move |_: Event| {
+        let current_offset = selected.get().offset;
+        let new_offset = current_offset - 1;
+        if G::IS_BROWSER {
+            perseus::spawn_local(cloned!((selected, recipes_signal) => async move {
+
+                let recipes = get_recipes_at_offset(new_offset).
+                    await
+                    .expect("err")
+                        .into_iter()
+                        .map(|recipe| recipe.signal())
+                        .collect::<Vec<_>>();
+
+                recipes_signal.set(recipes);
+
+                selected.set(PageState{
+                    offset: new_offset
+                });
+
+            }));
+        }
+    });
+    if selected.get().offset > 0 {
+        view! {
+        span(on:click=click_left) { "(Left)"}
+         }
+    } else {
+        view! {
+            span {}
         }
     }
 }
@@ -134,8 +209,6 @@ pub fn viewer<G: sycamore::generic_node::GenericNode + perseus::Html>(
                         .text()
                         .await
                         .expect("failed to get text from response body");
-                    web_sys::console::log_1(&resp.status_text().into());
-                    web_sys::console::log_1(&format!("{:?}", resp.status()).into());
                     serde_json::from_str::<RecipeId>(&body).expect("failed to decode id and recipe from json");
                 });
             }
@@ -145,7 +218,6 @@ pub fn viewer<G: sycamore::generic_node::GenericNode + perseus::Html>(
 
     let edit_recipe = cloned!((selected) => move || {
         cloned!((selected) => move |_: Event| {
-            web_sys::console::log_1(&"edit".into());
             let mut selected_state = selected
                 .get()
                 .as_ref().clone().expect("We shouldn't be able to edit a recipe if it isn't open");
@@ -278,9 +350,6 @@ fn recipe_component<G: sycamore::generic_node::GenericNode + perseus::Html>(
     (selected_signal, recipe): (Signal<Option<SelectedState>>, Signal<RecipeSignal>),
 ) -> View<G> {
     let recipe_id = recipe.get().id.id;
-    web_sys::console::log_1(
-        &format!("got nothing {:?}, {:?}", selected_signal.get(), recipe).into(),
-    );
     cloned!((selected_signal, recipe) => view! {
         div(
             class = "pure-u-1 pure-u-md-1-2 pure-u-lg-1-3",

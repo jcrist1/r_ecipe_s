@@ -1,5 +1,6 @@
 use crate::db::DBAccess;
 use actix_web::middleware::Logger;
+use actix_web::web::Query;
 use actix_web::{dev::*, http::header, web::Data, *};
 use futures_util::{StreamExt, TryStreamExt};
 use log::{debug, error, info, log_enabled, Level};
@@ -208,9 +209,20 @@ impl RecipeAccess {
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct Paging {
+    offset: Option<i64>,
+}
+
+const PAGE_SIZE: i64 = 9;
+
 #[get("api/v1/recipes")]
-pub(crate) async fn get_all(recipe_access: Data<RecipeAccess>) -> Result<HttpResponse> {
-    let data = recipe_access.get_all(0, 9).await?;
+pub(crate) async fn get_all(
+    recipe_access: Data<RecipeAccess>,
+    page: Query<Paging>,
+) -> Result<HttpResponse> {
+    let page = page.offset;
+    let data = recipe_access.get_all(page.unwrap_or(0), PAGE_SIZE).await?;
 
     let body = serde_json::to_string(&data)?;
 
