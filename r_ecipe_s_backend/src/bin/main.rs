@@ -1,5 +1,5 @@
 use actix_cors::Cors;
-use actix_web::{dev::*, http::header, web::Data, *};
+use actix_web::{dev::*, http::header, middleware::Logger, web::Data, *};
 use futures::executor::block_on;
 use perseus::internal::i18n::TranslationsManager;
 use perseus::internal::serve::{ServerOptions, ServerProps};
@@ -9,13 +9,13 @@ use perseus::SsrNode;
 use perseus_actix_web::configurer;
 use std::sync::Arc;
 
+use env_logger;
 use perseus_engine::app::{
     get_app_root, get_error_pages_contained, get_immutable_store, get_locales, get_plugins,
     get_static_aliases, get_templates_map_atomic_contained, get_translations_manager,
 };
 use r_ecipe_s_backend::app_config;
 use r_ecipe_s_backend::db;
-use r_ecipe_s_frontend::get_mutable_store;
 use std::env;
 use std::fs;
 use thiserror::Error as ThisError;
@@ -50,6 +50,8 @@ async fn main() -> Result<()> {
     );
     env::set_current_dir("../r_ecipe_s_frontend/.perseus").unwrap();
 
+    std::env::set_var("RUST_LOG", "actix_web=info");
+    env_logger::init();
     let host_port = conf.http_config.connection_string();
     let http_server = HttpServer::new(move || {
         let cors = Cors::default()
@@ -61,10 +63,9 @@ async fn main() -> Result<()> {
             .max_age(3600);
         let recipe_access = Data::new(RecipeAccess::new(&db_access));
         App::new()
+            .wrap(Logger::default())
             .bind_recipe_routes(recipe_access)
             .configure(block_on(configurer(get_props())))
-        // .configure(block_on(configurer(todo!()))) // This could then be used to serve perseus
-        // // stuff once figureed out
     })
     .bind(&host_port)?;
 

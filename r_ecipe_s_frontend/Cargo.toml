@@ -14,4 +14,10 @@ sycamore = "0.7.1"
 reqwasm = "0.3.1"
 pulldown-cmark = "0.9"
 lazy_static = "1.4"
-web-sys = {version = "0.3.55", features = ["InputEvent", "KeyboardEvent", "Location", "Storage"]}
+web-sys = {version = "0.3.55", features = [
+        "InputEvent", 
+        "KeyboardEvent",
+        "Location",
+        "Storage",
+        "HtmlSelectElement",
+        "HtmlTextAreaElement"]}

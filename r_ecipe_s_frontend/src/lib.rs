@@ -1,3 +1,4 @@
+mod auto_form_component;
 mod error_pages;
 mod templates;
 mod util;
