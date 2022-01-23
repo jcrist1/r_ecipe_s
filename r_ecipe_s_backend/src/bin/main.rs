@@ -75,7 +75,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Gets the properties to pass to the server.
+/// Gets the properties to pass to the server. This is copied from the perseus
+/// generated program source code
 fn get_props() -> ServerProps<impl MutableStore, impl TranslationsManager> {
     let plugins = get_plugins::<SsrNode>();
 
