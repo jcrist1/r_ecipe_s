@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  r-ecipe-s:
+    ports: 
+      - "8000:8000"
+    build: ./
+    environment:
+      RUST_LOG: info
+      R_ECIPE_S_DB_PASSWORD: secret123
+      R_ECIPE_S_DB_HOST: postgres
+      R_ECIPE_S_SERVER_HOST: ${R_ECIPE_S_SERVER_HOST}0.0.0.0
+  postgres:
+    image: postgres:14.1-alpine3.15
+    ports: 
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: secret123
+      POSTGRES_USER: r_ecipe_s_user
+      POSTGRES_DB: r-ecipe-s
+      PGDATA: /pg_data/
+    volumes:
+      - pg_data:/pg_data
+
+volumes:
+  pg_data: 

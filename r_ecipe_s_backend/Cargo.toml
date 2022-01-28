@@ -5,6 +5,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
 [dependencies]
 perseus-actix-web = "0.3.1"
 sqlx = { version = "0.5", features = [ "migrate", "runtime-tokio-rustls", "postgres", "json",
@@ -27,4 +28,6 @@ perseus = "0.3.1"
 time = "0.3"
 log = "0.4"
 env_logger = "0.9"
+
+
 

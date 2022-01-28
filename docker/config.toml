@@ -1,0 +1,10 @@
+[db]
+host = "r-ecipe-s.internal"
+port = 5432
+user = "r_ecipe_s_user"
+database = "r-ecipe-s"
+password = "secret"
+
+[http]
+port = 8000
+host = "0.0.0.0"
