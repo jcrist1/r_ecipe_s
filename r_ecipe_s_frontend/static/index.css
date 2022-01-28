@@ -2,7 +2,7 @@ html,
 body {
     font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-weight: 300;
-    overflow:hidden;
+    overflow:scroll;
     background: #FAF5F2;
     height:100%
 }

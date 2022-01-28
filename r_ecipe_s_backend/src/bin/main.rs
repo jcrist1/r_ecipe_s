@@ -41,6 +41,7 @@ async fn greet(req: HttpRequest) -> impl Responder {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     let conf = app_config::AppConfig::load("config/config.toml")?;
     let db_access = Arc::new(
         db::DBMigrator::new(&conf.db_config)
@@ -51,7 +52,6 @@ async fn main() -> Result<()> {
     env::set_current_dir("../r_ecipe_s_frontend/.perseus").unwrap();
 
     std::env::set_var("RUST_LOG", "actix_web=info");
-    env_logger::init();
     let host_port = conf.http_config.connection_string();
     let http_server = HttpServer::new(move || {
         let cors = Cors::default()

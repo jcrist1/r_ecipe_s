@@ -4,6 +4,7 @@ You'll need to configure the `r_ecipe_s_backend/config/config.toml` (see the `co
 If you use the docker compose to spin up a postgres instance, you can set the password used there
 
 you'll need the [sqlx cli](https://github.com/launchbadge/sqlx/tree/master/sqlx-cli)
+you'll need the [perseus cli](https://docs.rs/perseus-cli/latest/perseus_cli/index.html)
 
 Run migrations
 ```bash
@@ -22,3 +23,17 @@ perseus build
 When perseus first runs it will create it's own `r_ecipe_s_frontend/.perseus/Cargo.toml` where it defines empty
 workspaces. The backend depends on this workspace, but is in its own workspace. To fix things
 just remove `[workspaces]` from the `r_ecipe_s_frontend/.perseus/Cargo.toml`
+
+## Building docker image
+for now it's a little clunky.  Need to compile the frontend, but now compile the backend with
+```bash
+cargo build --release --target=x86_64-unknown-linux-gnu
+```
+On MacOS you will need the `x86_64-unknown-linux-gnu` linker from `brew`
+
+Then copy the executable from the root: `target/x86_64-unknown-linux-gnu/release/main` to `docker/`
+Copy the directory `r_ecipe_s_frontend/.perseus/dist` to `docker/`.
+Copy `r_ecipe_s_frontend/index.html` to `docker/`.
+Copy `r_ecipe_s_frontend/static` to `docker/`.
+We currently have to do this in order to have a small build context for `fly`
+
