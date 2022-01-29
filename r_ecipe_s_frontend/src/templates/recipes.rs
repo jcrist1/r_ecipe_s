@@ -36,10 +36,6 @@ pub fn recipes_page() -> View<G> {
     let page = raw_state.page;
     let recipes_signal = Signal::new(vec![]);
     if G::IS_BROWSER {
-        // Spawn a `Future` on this thread to fetch the data (`spawn_local` is re-exported from `wasm-bindgen-futures`)
-        // Don't worry, this doesn't need to be sent to JavaScript for execution
-        //
-        // We want to access the `message` `Signal`, so we'll clone it in (and then we need `move` because this has to be `'static`)
         perseus::spawn_local(cloned!((recipes_signal) => async move {
             let recipes = get_recipes_at_offset(0).
                 await
@@ -47,11 +43,12 @@ pub fn recipes_page() -> View<G> {
                     .into_iter()
                     .map(|recipe| recipe.signal())
                     .collect::<Vec<_>>();
+
             recipes_signal.set(recipes);
         }));
     }
     let create_recipe = cloned!((recipes_signal, selected) => move |_| {
-        let mut vec = recipes_signal.get().iter().cloned().collect::<Vec<_>>();// push((id, new_recipe));
+        let mut vec = recipes_signal.get().iter().cloned().collect::<Vec<_>>();
         perseus::spawn_local(
             cloned!((selected, recipes_signal) => async move {
                 let empty_recipe = Recipe {
@@ -100,16 +97,21 @@ pub fn recipes_page() -> View<G> {
             (cloned!((page_right, recipes_for_right) => right_button(page_right, recipes_for_right)))
         }
 
-        (cloned!((selected) => viewer(selected)))
-        Indexed(IndexedProps {
-            iterable: recipes_signal.handle(),
-            template:  cloned!((selected_for_recipes) => move |recipe| {
-                recipe_component((selected_for_recipes.clone(), recipe))
-            }),
-        })
-        div(class = "pure-u-1 pure-u-md-1-2 pure-u-lg-1-4 unselected", ) {
-            div(class = "plus-button", on:click = create_recipe, dangerously_set_inner_html="&nbsp;")
-        }
+            (cloned!((selected) => viewer(selected)))
+            (
+                {
+                    ""
+                }
+            )
+            Indexed(IndexedProps {
+                iterable: recipes_signal.handle(),
+                template:  cloned!((selected_for_recipes) => move |recipe| {
+                    recipe_component((selected_for_recipes.clone(), recipe))
+                }),
+            })
+            div(class = "col-sm-6 col-md-4  unselected", ) {
+                div(class = "plus-button", on:click = create_recipe, dangerously_set_inner_html="&nbsp;")
+            }
     }
 }
 
@@ -139,6 +141,9 @@ pub fn right_button<G: sycamore::generic_node::GenericNode + perseus::Html>(
             }));
         }
     });
+    if G::IS_BROWSER {
+        web_sys::console::log_1(&"HELP0".into());
+    }
     view! {
         span(on:click=click_right) { "(Right)"}
     }
@@ -227,6 +232,7 @@ pub fn viewer<G: sycamore::generic_node::GenericNode + perseus::Html>(
     });
 
     cloned!((selected) => match selected.get().as_ref().clone() {
+
         Some(SelectedState { recipe, editing }) => {
             let recipe_id = recipe.get().id.id;
             cloned!((recipe) => view! {
@@ -243,7 +249,9 @@ pub fn viewer<G: sycamore::generic_node::GenericNode + perseus::Html>(
                 div(class = "de-selector", on:click=close_recipe()) { br }
             })
         }
-        None => view! { "" },
+        None =>  {
+            view! { "" }
+        }
     })
 }
 
@@ -350,9 +358,10 @@ fn recipe_component<G: sycamore::generic_node::GenericNode + perseus::Html>(
     (selected_signal, recipe): (Signal<Option<SelectedState>>, Signal<RecipeSignal>),
 ) -> View<G> {
     let recipe_id = recipe.get().id.id;
+
     cloned!((selected_signal, recipe) => view! {
         div(
-            class = "pure-u-1 pure-u-md-1-2 pure-u-lg-1-3",
+            class = "col-sm-6 col-md-4",
             on:click = cloned!((selected_signal, recipe) => move |_: Event| {
                 let new_signal = Some(
                     SelectedState {
@@ -360,7 +369,6 @@ fn recipe_component<G: sycamore::generic_node::GenericNode + perseus::Html>(
                         editing: false
                     }
                 );
-                // e.stop_immediate_propagation();
                 selected_signal.set(new_signal);
             })
         ) {

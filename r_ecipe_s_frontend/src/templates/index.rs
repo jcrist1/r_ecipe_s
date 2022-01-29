@@ -1,3 +1,4 @@
+
 use perseus::{
     http::header::{HeaderMap, HeaderName},
     Html, RenderFnResultWithCause, SsrNode, Template,
@@ -14,9 +15,9 @@ pub struct IndexPageProps {
 #[component(IndexPage<G>)]
 pub fn index_page(props: IndexPageProps) -> View<G> {
     view! {
-        div(class = "pure-u-1-3-3") {
+        div {
         p {(props.greeting)}
-        a(href = "about", id = "about-link") { "About!" }
+        a(href = "recipes", id = "") { "recipes!" }
         }
     }
 }
@@ -32,7 +33,7 @@ pub fn get_template<G: Html>() -> Template<G> {
 #[perseus::head]
 pub fn head(_props: IndexPageProps) -> View<SsrNode> {
     view! {
-        title { "Index Page | Perseus Example – Basic" }
+        title { "About recipes" }
     }
 }
 
@@ -42,7 +43,10 @@ pub async fn get_build_props(
     _locale: String,
 ) -> RenderFnResultWithCause<IndexPageProps> {
     Ok(IndexPageProps {
-        greeting: "Hello World!".to_string(),
+        greeting: r#"In addition to a really tortured attempt to shoehorn the 
+            rust \"rs\" somewhere, this is also actually a place where I will
+            try and store some personal reicpes"#
+            .to_string(),
     })
 }
 
