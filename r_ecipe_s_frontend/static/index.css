@@ -37,9 +37,10 @@ body {
 
 .selected {
     position: absolute;
-    width: 800pt;
-    left: 100pt;
     top: 10pt;
+    width: 90%;
+    margin-left: auto;
+    margin-right: auto;
     float: initial;
     overflow: scroll;
     z-index: 100;
@@ -96,8 +97,9 @@ body {
     border-bottom: solid;
     border-color: #C0C0C0;
     border-width: 1pt;
-    height: 12pt;
-    padding: 5pt;
+    min-height: 20pt;
+    padding: 3pt;
+    padding-left: 5pt;
     margin: 0pt;
 }
 
