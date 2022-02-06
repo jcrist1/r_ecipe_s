@@ -1,6 +1,6 @@
 cd r_ecipe_s_frontend
 perseus build
-cd ../r_ecipe_s_backend
+cd ../server
 cargo build --release --target=x86_64-unknown-linux-gnu
 cd ..
 cp -r r_ecipe_s_frontend/.perseus/dist docker/

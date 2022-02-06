@@ -1,4 +1,3 @@
-use actix_cors::Cors;
 use actix_web::{dev::*, http::header, middleware::Logger, web::Data, *};
 use futures::executor::block_on;
 use perseus::internal::i18n::TranslationsManager;
@@ -34,11 +33,6 @@ enum Error {
 }
 type Result<T> = std::result::Result<T, Error>;
 
-async fn greet(req: HttpRequest) -> impl Responder {
-    let name = req.match_info().get("name").unwrap_or("World");
-    format!("Hello {}", &name)
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
@@ -54,13 +48,6 @@ async fn main() -> Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=info");
     let host_port = conf.http_config.connection_string();
     let http_server = HttpServer::new(move || {
-        let cors = Cors::default()
-            .allowed_origin("https://localhost:8080/")
-            .allowed_origin_fn(|origin, _req_head| origin.as_bytes().ends_with(b".localhost:8080"))
-            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
-            .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
-            .allowed_header(http::header::CONTENT_TYPE)
-            .max_age(3600);
         let recipe_access = Data::new(RecipeAccess::new(&db_access));
         App::new()
             .wrap(Logger::default())
