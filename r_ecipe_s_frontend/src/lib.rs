@@ -1,6 +1,6 @@
 mod auto_form_component;
 mod error_pages;
-mod templates;
+pub mod templates;
 mod util;
 
 use perseus::define_app;
