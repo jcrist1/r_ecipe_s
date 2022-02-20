@@ -1,11 +1,11 @@
-cd r_ecipe_s_frontend
-perseus build
-cd ../server
+cd server
+export  CC=x86_64-unknown-linux-gnu-gcc
 cargo build --release --target=x86_64-unknown-linux-gnu
+cd ../frontend
+trunk build --release
 cd ..
-cp -r r_ecipe_s_frontend/.perseus/dist docker/
-cp -r r_ecipe_s_frontend/static docker/
-cp -r r_ecipe_s_frontend/index.html docker/
-cp -r target/x86_64-unknown-linux-gnu/release/main docker/
+cp -r frontend/static docker/
+cp -r frontend/dist docker/
+cp -r target/x86_64-unknown-linux-gnu/release/r_ecipe_s_server docker/
 cd docker
 docker build -t r-ecipe-s:latest .

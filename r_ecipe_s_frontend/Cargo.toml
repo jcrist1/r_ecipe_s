@@ -7,11 +7,10 @@ edition = "2021"
 
 [dependencies]
 serde = "1.0.133"
-perseus = { version = "0.3.1", features = [ "hydrate" ] }
 r_ecipe_s_model = { path = "../r_ecipe_s_model" }
 serde_json = "1.0.74"
-sycamore = "0.7.1"
-reqwasm = "0.3.1"
+sycamore = {version = "0.8.0-beta.2", features = ["suspense"]}
+reqwasm = "0.4.0"
 pulldown-cmark = "0.9"
 web-sys = {version = "0.3.55", features = [
         "InputEvent", 
@@ -20,3 +19,4 @@ web-sys = {version = "0.3.55", features = [
         "Storage",
         "HtmlSelectElement",
         "HtmlTextAreaElement"]}
+anyhow = "1.0"

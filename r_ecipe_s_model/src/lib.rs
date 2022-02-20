@@ -13,6 +13,12 @@ pub struct RecipeWithId {
     pub data: Recipe,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct RecipesResponse {
+    pub recipes: Vec<RecipeWithId>,
+    pub total_pages: i64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub struct RecipeId {
     pub id: i64,

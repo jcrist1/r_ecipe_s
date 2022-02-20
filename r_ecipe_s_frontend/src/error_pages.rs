@@ -1,4 +1,3 @@
-use perseus::{ErrorPages, Html};
 use sycamore::view;
 
 pub fn get_error_pages<G: Html>() -> ErrorPages<G> {

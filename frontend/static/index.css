@@ -25,7 +25,7 @@ body {
     align: center;
     float: center;
     margin: 5pt;
-    background-image: url(/plus_circle.svg);
+    background-image: url(/static/plus-circle.svg);
     background-size: 100%;
     border-style: solid;
     border-color: #BBBBBB;
@@ -72,7 +72,7 @@ body {
     align: center;
     float: right;
     margin: 5pt;
-    background-image: url(/x_circle.svg);
+    background-image: url(/static/x-circle.svg);
     background-size: 100%;
     border-style: solid;
     border-color: #BBBBBB;
