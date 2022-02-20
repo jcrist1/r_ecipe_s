@@ -5,6 +5,9 @@ services:
     ports: 
       - "8000:8000"
     build: ./
+    command: 
+      - sh
+      - entrypoint.sh
     environment:
       RUST_LOG: info
       R_ECIPE_S_DB_PASSWORD: secret123

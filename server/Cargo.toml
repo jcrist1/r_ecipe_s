@@ -5,15 +5,13 @@ edition = "2021"
 
 [dependencies]
 perseus-actix-web = "0.3.1"
-r_ecipe_s_frontend = {path = "../r_ecipe_s_frontend/"}
 r_ecipe_s_backend = {path = "../r_ecipe_s_backend/"}
-perseus-engine = {path = "../r_ecipe_s_frontend/.perseus/"}
 futures = "0.3"
 futures-util = "0.3.19"
-perseus = "0.3.1"
 tokio = { version = "1", features = ["full"] }
 config = {version = "0.11.0", features = ["toml"]}
-actix-web = "4.0.0-beta.15"
+actix-web = "4.0.0-beta.20"
+actix-files = "0.6.0-beta.15"
 env_logger = "0.9"
 thiserror = "1.0.30"
 log = "0.4"

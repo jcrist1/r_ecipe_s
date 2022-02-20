@@ -4,7 +4,7 @@ use actix_web::web::Query;
 use actix_web::{dev::*, http::header, web::Data, *};
 use futures_util::{StreamExt, TryStreamExt};
 use log::{debug, error, info, log_enabled, Level};
-use r_ecipe_s_model::{Ingredient, Recipe, RecipeId, RecipeWithId};
+use r_ecipe_s_model::{Ingredient, Recipe, RecipeId, RecipeWithId, RecipesResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::types::time::OffsetDateTime;
 use sqlx::types::Json;
@@ -12,6 +12,7 @@ use sqlx::FromRow;
 
 use std::sync::Arc;
 use thiserror::Error as ThisError;
+const MAX_PAGE_SIZE: i64 = 100;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
@@ -25,6 +26,8 @@ pub enum Error {
     ParseInt(#[from] std::num::ParseIntError),
     #[error("Missing item of type: {item_type} with id: {id}")]
     Missing { item_type: String, id: i64 },
+    #[error("Incorrect page size: {0}. Must be between 1 and 100")]
+    IncorrectPageSize(i64),
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -36,6 +39,7 @@ impl ResponseError for Error {
             Error::DB(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::ParseInt(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::Missing { .. } => http::StatusCode::NOT_FOUND,
+            Error::IncorrectPageSize(_) => http::StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -45,7 +49,10 @@ pub trait RecipeService {
     fn bind_recipe_routes(self, recipe_access: Data<RecipeAccess>) -> Self::ServiceType;
 }
 
-impl<T> RecipeService for App<T> {
+impl<T> RecipeService for App<T>
+where
+    T: ServiceFactory<ServiceRequest, Config = (), Error = actix_web::Error, InitError = ()>,
+{
     type ServiceType = Self;
     fn bind_recipe_routes(self, recipe_access: Data<RecipeAccess>) -> Self::ServiceType {
         self.app_data(recipe_access)
@@ -90,7 +97,10 @@ impl RecipeRep {
 }
 
 impl RecipeAccess {
-    async fn get_all(&self, page: i64, page_size: i64) -> Result<Vec<RecipeWithId>> {
+    async fn get_all(&self, page: i64, page_size: i64) -> Result<RecipesResponse> {
+        if (page_size <= 0) || (page_size > MAX_PAGE_SIZE) {
+            return Err(Error::IncorrectPageSize(page_size));
+        }
         let offset = page * page_size;
         let data = sqlx::query_as!(
             RecipeRep,
@@ -118,8 +128,22 @@ impl RecipeAccess {
         )
         .try_collect::<Vec<_>>()
         .await;
+        let count = sqlx::query!(
+            r#"
+                SELECT (COUNT(id) / $1)::int8 as count  FROM recipes;
+            "#,
+            page_size
+        )
+        .fetch_one(self.db_access.get_pool())
+        .await?
+        .count
+        .expect("SQL COUNT returned NULL, when counting recipes, which shouldn't be possible");
+
         let data = data?;
-        Ok(data)
+        Ok(RecipesResponse {
+            recipes: data,
+            total_pages: count,
+        })
     }
 
     async fn update(&self, id: i64, recipe: &Recipe) -> Result<Option<RecipeId>> {

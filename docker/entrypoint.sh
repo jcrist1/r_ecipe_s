@@ -1,2 +1,2 @@
 cd backend
-./main
+./r_ecipe_s_server
