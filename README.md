@@ -39,6 +39,8 @@ We currently have to do this in order to have a small build context for `fly`
 
 ## Building Css
 ```sh
-tailwindcss-to-rust --input frontend/css/tailwind.css --tailwind-config frontend/tailwind.config.js --output r_ecipe_s_frontend/src/css/generated.rs --rustfmt
+tailwindcss-to-rust --input frontend/css/tailwind.css --tailwind-config frontend/tailwind.config.js --output r_ecipe_s_style/src/generated.rs --rustfmt
 ```
+Then you need to make everything `pub` in the generated file instead of `pub(crate)`. 
+Now tailwind can scan a specific dependency without scanning the whole generated rust file
 
