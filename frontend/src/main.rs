@@ -1,10 +1,8 @@
-use r_ecipe_s_frontend::templates::recipes::RecipesPage;
+use r_ecipe_s_frontend::recipes::RecipesPage;
 use sycamore::prelude::*;
 use sycamore::suspense::Suspense;
 
 fn main() {
-    println!("BOOYAH");
-
     sycamore::render(|ctx| {
         view! { ctx,
             Suspense {

@@ -1,4 +1,6 @@
+![ferris the rustacean chef](frontend/static/ferris-chef.svg)
 # RecipeS
+
 
 You'll need to configure the `r_ecipe_s_backend/config/config.toml` (see the `config.toml.dist`) file for an example.
 If you use the docker compose to spin up a postgres instance, you can set the password used there
@@ -36,4 +38,11 @@ Copy the directory `r_ecipe_s_frontend/.perseus/dist` to `docker/`.
 Copy `r_ecipe_s_frontend/index.html` to `docker/`.
 Copy `r_ecipe_s_frontend/static` to `docker/`.
 We currently have to do this in order to have a small build context for `fly`
+
+## Building Css
+```sh
+tailwindcss-to-rust --input frontend/css/tailwind.css --tailwind-config frontend/tailwind.config.js --output r_ecipe_s_style/src/generated.rs --rustfmt
+```
+Then you need to make everything `pub` in the generated file instead of `pub(crate)`. 
+Now tailwind can scan a specific dependency without scanning the whole generated rust file
 
