@@ -225,7 +225,14 @@ pub async fn RightButton<'a, G: Html>(
         if page.get().at_last_page() {
             view! {scope_ref, div {}}
         } else {
-            view! {scope_ref, div(class = DC!["right-button", C.fg.flex_none, C.siz.h_8, C.siz.w_8], on:click=click_right) {} }
+            view! {
+                scope_ref,
+                div(
+                    class = DC!["right-button", C.fg.flex_none, C.siz.h_8, C.siz.w_8, C.bg.bg_no_repeat, C.bg.bg_contain],
+                    style = background("chevron-right.svg"),
+                    on:click=click_right
+                ) {}
+            }
         }
     })
     }
@@ -264,7 +271,11 @@ pub async fn LeftButton<'a, G: Html>(
     view! { scope_ref,  ({
         if page.get().offset > 0 {
             view! { scope_ref,
-            div(class = DC!["left-button", C.fg.flex_none, C.siz.h_8, C.siz.w_8], on:click=click_left) {""}
+            div(
+                class = DC![C.fg.flex_none, C.siz.h_8, C.siz.w_8, C.bg.bg_no_repeat, C.bg.bg_contain],
+                style = background("chevron-left.svg"),
+                on:click=click_left
+            )
             }
         } else {
             view! { scope_ref,
