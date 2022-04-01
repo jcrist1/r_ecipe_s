@@ -37,3 +37,8 @@ Copy `r_ecipe_s_frontend/index.html` to `docker/`.
 Copy `r_ecipe_s_frontend/static` to `docker/`.
 We currently have to do this in order to have a small build context for `fly`
 
+## Building Css
+```sh
+tailwindcss-to-rust --input frontend/css/tailwind.css --tailwind-config frontend/tailwind.config.js --output r_ecipe_s_frontend/src/css/generated.rs --rustfmt
+```
+

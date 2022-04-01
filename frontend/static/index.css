@@ -1,38 +1,22 @@
-html,
-body {
-    font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-weight: 300;
-    overflow:scroll;
-    background: #FAF5F2;
-    height:100%
-}
-
-.header {
-    font-weight: 400;
-    font-size: 24pt;
-    padding: 10pt;
-}
-
 .hidden {
     display:none;
+}
+
+.left-button {
+    background-image: url(/static/chevron-left.svg);
+    background-repeat: no-repeat;
+}
+
+.right-button {
+    background-image: url(/static/chevron-right.svg);
+    background-repeat: no-repeat;
 }
 
 .shown {
     display:block;
 }
 .plus-button {
-    padding: 1pt;
-    align: center;
-    float: center;
-    margin: 5pt;
     background-image: url(/static/plus-circle.svg);
-    background-size: 100%;
-    border-style: solid;
-    border-color: #BBBBBB;
-    border: 1pt;
-    height: 20pt;
-    width: 20pt;
-    z-index: 1;
 }
 
 .selected {
@@ -56,30 +40,13 @@ body {
 }
 
 
-.fader {
-    background-color: #FAFAFF;
-    position: relative;
-    height: 15pt;
-    bottom: 15pt;
-}
 .unselected {
     overflow: hidden;
     height: 220pt;
 }
 
 .close-button {
-    padding: 1pt;
-    align: center;
-    float: right;
-    margin: 5pt;
     background-image: url(/static/x-circle.svg);
-    background-size: 100%;
-    border-style: solid;
-    border-color: #BBBBBB;
-    border: 1pt;
-    height: 10pt;
-    width: 10pt;
-    z-index: 1;
 }
 
 .recipe-tile {

@@ -1,4 +1,7 @@
+use std::fmt::{Arguments, Display};
+
 use crate::auto_form_component::*;
+use crate::css::generated::*;
 use crate::util::markdown_to_html;
 use r_ecipe_s_model::{Recipe, RecipeId, RecipeWithId, RecipesResponse};
 use serde::{Deserialize, Serialize};
@@ -6,6 +9,7 @@ use sycamore::futures::ScopeSpawnFuture;
 use sycamore::prelude::*;
 use sycamore::rt::{JsCast, JsValue};
 use sycamore::suspense::Suspense;
+use tailwindcss_to_rust_macros::*;
 use web_sys::{Event, HtmlInputElement, HtmlTextAreaElement};
 
 use anyhow::Error;
@@ -21,6 +25,32 @@ pub async fn get_recipes_at_offset(offset: u32) -> Result<RecipesResponse> {
         .unwrap();
 
     serde_json::from_str::<RecipesResponse>(&body).map_err(|err| err.into())
+}
+
+fn header() -> String {
+    format!(
+        "{}",
+        DC![
+            C.typ.text_lg,
+            C.spc.pr_3,
+            C.spc.pl_3,
+            C.spc.pt_2,
+            C.spc.pb_2,
+            C.bg.bg_amber_200,
+            C.bor.rounded_t_lg,
+            C.siz.h_12
+        ]
+    )
+}
+fn tile_background() -> String {
+    format!(
+        "{}",
+        DC![C.bg.bg_amber_50, C.bor.rounded_lg, C.fil.drop_shadow_xl]
+    )
+}
+
+fn background(image_name: &str) -> String {
+    format!("background-image: url(/static/{image_name})")
 }
 
 #[component]
@@ -99,20 +129,41 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
 
     let recipes = scope_ref.create_ref(raw_state.get().recipes.clone());
     view! { scope_ref,
-        div(class = "header") {
-            span {"RecipeS – "}
-            Suspense {
-                fallback: view! {scope_ref, ""},
-                LeftButton(raw_state)
-            }
-            PagePosition(raw_state)
-            Suspense {
-                fallback: view! {scope_ref, ""},
-                RightButton(raw_state)
+        div(class = DC![
+            C.spc.p_6,
+            M![M.two_xl, C.siz.w_1_of_2],
+            M![M.xl, C.siz.w_1_of_2],
+            M![M.lg, C.siz.w_full],
+            M![M.md, C.siz.w_full],
+            M![M.sm, C.siz.w_full],
+        ]) {
+            div(class = DC![
+                C.lay.flex, C.fg.content_center, C.spc.p_5, C.bg.bg_amber_50, C.bor.rounded_lg,
+                C.fil.drop_shadow_xl
+            ]) {
+                div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {"RecipeS"}
+                Suspense {
+                    fallback: view! {scope_ref, ""},
+                    LeftButton(raw_state)
+                }
+                PagePosition(raw_state)
+                Suspense {
+                    fallback: view! {scope_ref, ""},
+                    RightButton(raw_state)
+                }
             }
         }
 
         Viewer(selected)
+        div(class = DC![
+            C.lay.grid,
+            C.fg.grid_cols_1,
+            C.fg.gap_6,
+            C.spc.p_5,
+            M![M.two_xl, C.fg.grid_cols_3],
+            M![M.xl, C.fg.grid_cols_3],
+            M![M.lg, C.fg.grid_cols_2],
+        ]) {
             Keyed(KeyedProps {
                 iterable: recipes,
                 view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
@@ -120,8 +171,16 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
                 }},
                 key: |recipe| recipe.get().as_ref().id.id,
             })
-        div(class = "col-sm-6 col-md-4  unselected") {
-            div(class = "plus-button", on:click = create_recipe, dangerously_set_inner_html="&nbsp;")
+            div(class = DC![
+                C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
+                C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
+            ]) {
+                div(
+                    class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6],
+                    on:click = create_recipe,
+                    style = background("plus-circle.svg")
+                )
+            }
         }
     }
 }
@@ -134,7 +193,7 @@ pub fn PagePosition<'a, G: Html>(
         let PageState{ mut offset, mut total_pages } = *app_state.get().page.get();
         offset += 1;
         total_pages += 1;
-        view! { scope_ref, (format!(" page {offset} of {total_pages} ")) }
+        view! { scope_ref, div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {(format!(" page {offset} of {total_pages} "))}}
     })}
 }
 
@@ -169,9 +228,9 @@ pub async fn RightButton<'a, G: Html>(
     };
     view! { scope_ref, ({
         if page.get().at_last_page() {
-            view! {scope_ref, ""}
+            view! {scope_ref, div {}}
         } else {
-            view! {scope_ref, span(on:click=click_right) { "(Right)"} }
+            view! {scope_ref, div(class = DC!["right-button", C.fg.flex_none, C.siz.h_8, C.siz.w_8], on:click=click_right) {} }
         }
     })
     }
@@ -210,11 +269,11 @@ pub async fn LeftButton<'a, G: Html>(
     view! { scope_ref,  ({
         if page.get().offset > 0 {
             view! { scope_ref,
-            span(on:click=click_left) { "(Left)"}
+            div(class = DC!["left-button", C.fg.flex_none, C.siz.h_8, C.siz.w_8], on:click=click_left) {""}
             }
         } else {
             view! { scope_ref,
-            span {}
+            div {}
             }
         }
     })
@@ -266,6 +325,7 @@ pub async fn Viewer<'a, G: Html>(
                 .clone()
                 .expect("We shouldn't be able to edit a recipe if it isn't open");
             selected_state.editing = true;
+            //let b = [C.lay.fixed, C.lay.block]
             selected.set(Some(selected_state));
         }
     };
@@ -279,17 +339,33 @@ pub async fn Viewer<'a, G: Html>(
                 let recipe = scope_ref.create_ref(recipe.clone());
                 let editing = scope_ref.create_ref(selected_state.editing);
                 view! { scope_ref,
-                div(on:dblclick = edit_recipe()) {
-                    div(class = "recipe-tile selected", id = format!("recipe-{:?}", recipe_id)) {
-                        div(class = "close-button", on:click=close_recipe()) {}
+                div(
+                    class = DC![
+                        C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.fixed, C.lay.block,
+                        C.fg.place_items_center, C.fg.content_center, C.lay.z_10
+                    ]
+                ) {
+                    div(
+                        class = DC![&tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_10],
+                        id = format!("recipe-{:?}", recipe_id),
+                        on:dblclick = edit_recipe()
+                    ) {
+                        div(
+                            class = DC![
+                                C.lay.absolute, C.lay.top_0, C.lay.right_0, C.siz.h_6, C.siz.w_6, C.bg.bg_cover,
+                                C.bg.bg_no_repeat, C.spc.m_3
+                            ],
+                            on:click=close_recipe(),
+                            style = background("x-circle.svg")
+                        ) {}
                         (if *editing {
                             view! {scope_ref, RecipeDataFormComponent(recipe) }
                         } else {
                             view! {scope_ref, RecipeDataComponent(recipe)}
                         })
                     }
+                    div(class = DC![C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_10], on:click=close_recipe()) { br }
                 }
-                div(class = "de-selector", on:click=close_recipe()) { br }
                 }
             }
             None => {
@@ -364,13 +440,13 @@ fn RecipeDataFormComponent<G: Html>(
         description.set(input_value);
     };
     view! { scope_ref,
-    div(class = "recipe-title") {
+    div(class = header()) {
         input(type="text", value=name.get(), on:change = set_name)
     }
     div(class = "recipe-body") {
-        p(style = "font-weight: 600;") {"Ingredients"}
+        p(class = DC![C.typ.text_xl, C.typ.text_gray_600])  {"Ingredients"}
         IngredientsFormComponent(ingredients)
-            p(style = "font-weight: 600;") {"Directions"}
+            p(style = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Directions"}
         div(class = "recipe-description") {
             textarea(style = "width: 100%; height: 500pt;", on:change = set_description) {(description.get())}
         }
@@ -388,16 +464,16 @@ pub fn RecipeDataComponent<G: Html>(
     let name = scope_ref.create_ref(recipe.get().name.clone());
     let description = scope_ref.create_ref(recipe.get().description.clone());
     view! { scope_ref,
-    div(class = "recipe-title") {
-        span {(format!("{} ", name.get()))}
-    }
-    div(class = "recipe-body") {
-        p(style = "font-weight: 600;") {"Ingredients"}
-        IngredientsComponent(ingredients)
+        div(class = header()) {//"recipe-title") {
+            p {(format!("{}", name.get()))}
+        }
+        div(class = DC![C.spc.p_3]) {
+            p(style = "font-weight: 600;") {"Ingredients"}
+            IngredientsComponent(ingredients)
 
-            p(style = "font-weight: 600;") {"Directions"}
-        div(class = "recipe-description", dangerously_set_inner_html = &markdown_to_html(&description.get()))
-    }
+                p(style = "font-weight: 600;") {"Directions"}
+            div(class = DC![C.pro.prose], dangerously_set_inner_html = &markdown_to_html(&description.get()))
+        }
     }
 }
 
@@ -412,7 +488,6 @@ pub fn RecipeComponent<G: Html>(
 
     view! { scope_ref,
     div(
-        class = "col-sm-6 col-md-4",
         on:click = move |_: Event| {
             web_sys::console::log_1(&format!("{:?}  Help", selected_signal.get().as_ref()).into());
             let new_signal = Some(
@@ -425,10 +500,14 @@ pub fn RecipeComponent<G: Html>(
         }
        ) {
         div(
-            class = "recipe-tile unselected",
+            class = DC![&tile_background(), C.siz.max_h_72, C.typ.truncate, C.lay.relative],
             id = format!("recipe-{:?}", recipe_id)
            ) {
             RecipeDataComponent(recipe)
+            div(class = DC![
+                C.lay.absolute, C.siz.h_20, C.siz.w_full, C.lay.bottom_0, C.bor.rounded_t_lg, C.bg.bg_gradient_to_t,
+                C.bg.from_amber_50
+            ])
         }
     }
     }

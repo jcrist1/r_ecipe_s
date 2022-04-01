@@ -1,5 +1,7 @@
+use crate::css::generated::*;
 use r_ecipe_s_model::{Ingredient, Quantity};
 use sycamore::{prelude::*, rt::JsCast};
+use tailwindcss_to_rust_macros::*;
 use web_sys::{Event, HtmlInputElement, HtmlSelectElement};
 
 pub trait DataToSignal {
@@ -257,7 +259,7 @@ pub fn IngredientsFormComponent<G: Html>(
             key: |rc| rc.get().0,
         })
         div {
-            div(class = "plus-button", on:click=add_handler) {}
+            div(class = format!("plus-button {}", DC![C.siz.h_10, C.siz.w_10]), on:click=add_handler) {}
         }
     }
 }
