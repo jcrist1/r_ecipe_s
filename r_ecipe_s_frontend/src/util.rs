@@ -1,5 +1,8 @@
 use pulldown_cmark::{html, Options, Parser};
 
+pub fn background(image_name: &str) -> String {
+    format!("background-image: url(/static/{image_name})")
+}
 pub fn markdown_to_html(markdown_str: &str) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);

@@ -1,5 +1,6 @@
-use crate::css::generated::*;
+use crate::util::background;
 use r_ecipe_s_model::{Ingredient, Quantity};
+use r_ecipe_s_style::generated::*;
 use sycamore::{prelude::*, rt::JsCast};
 use tailwindcss_to_rust_macros::*;
 use web_sys::{Event, HtmlInputElement, HtmlSelectElement};
@@ -76,7 +77,10 @@ fn QuantityFormComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quant
     };
 
     view! { scope_ref,
-        select(on:change = selected_handler) {
+        select(
+            class = DC![C.spc.p_1, C.siz.w_20],
+            on:change = selected_handler
+        ) {
             option(
                 value = COUNT,
                 selected=matches!(quantity.get().as_ref(), Quantity::Count(_))
@@ -90,7 +94,13 @@ fn QuantityFormComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quant
                 selected= matches!(quantity.get().as_ref(), Quantity::Tsp(_))
             ) {(TSP)}
         }
-        input(type="text", name="spec", on:change = quantity_handler, value = get_quantity(quantity.get().as_ref())) {}
+        input(
+            type="text",
+            class = DC![C.spc.p_1, C.siz.w_14],
+            name="spec",
+            on:change = quantity_handler,
+            value = get_quantity(quantity.get().as_ref())
+        ) {}
     }
 }
 
@@ -177,20 +187,18 @@ pub fn IngredientFormComponent<G: Html>(
             },
         ));
     };
-    let ingredient = &scope_ref
-        .create_ref(ingredient_with_id.get().clone())
-        .as_ref()
-        .1;
+    let ingredient = &scope_ref.create_ref(ingredient_with_id.get()).as_ref().1;
     let quantity = scope_ref.create_ref(ingredient.quantity.clone());
     let name = scope_ref.create_ref(ingredient.name.clone());
     view! { scope_ref,
-        QuantityFormComponent(quantity)
-        input(
-            type="text",
-            name = "name",
-            on:change = name_handler,
-            value = (name.get().to_string())
-        )
+            QuantityFormComponent(quantity)
+            input(
+                type = "text",
+                class = DC![C.spc.p_1, C.siz.w_48],
+                name = "name",
+                on:change = name_handler,
+                value = (name.get().to_string())
+            )
     }
 }
 
@@ -252,14 +260,26 @@ pub fn IngredientsFormComponent<G: Html>(
                         ingredients_clone.set(new);
                     };
                 view! { ctx,
-                    div { IngredientFormComponent(&data) }
-                    div(on:click = remove_handler){ "-" }
+                    div(class = DC![C.lay.flex,C.fg.gap_1, C.spc.p_2, C.siz.h_14]) {
+                        IngredientFormComponent(&data)
+                        div(class = DC![C.spc.pt_2]) {
+                            div(
+                                class = DC![ C.siz.h_6, C.siz.w_6, C.bg.bg_no_repeat, C.bg.bg_contain],
+                                on:click = remove_handler,
+                                style = background("dash-circle.svg")
+                            )
+                        }
+                    }
                 }
             },
             key: |rc| rc.get().0,
         })
-        div {
-            div(class = format!("plus-button {}", DC![C.siz.h_10, C.siz.w_10]), on:click=add_handler) {}
+        div(class = DC![C.spc.p_2]) {
+            div(
+                class = DC![C.siz.h_6, C.siz.w_6, C.bg.bg_no_repeat, C.bg.bg_contain],
+                on:click=add_handler,
+                style = background("plus-circle.svg")
+            ) {}
         }
     }
 }

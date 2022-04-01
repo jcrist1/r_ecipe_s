@@ -1,9 +1,7 @@
-use std::fmt::{Arguments, Display};
-
-use crate::auto_form_component::*;
-use crate::css::generated::*;
-use crate::util::markdown_to_html;
+use crate::form_component::*;
+use crate::util::{background, markdown_to_html};
 use r_ecipe_s_model::{Recipe, RecipeId, RecipeWithId, RecipesResponse};
+use r_ecipe_s_style::generated::*;
 use serde::{Deserialize, Serialize};
 use sycamore::futures::ScopeSpawnFuture;
 use sycamore::prelude::*;
@@ -47,10 +45,6 @@ fn tile_background() -> String {
         "{}",
         DC![C.bg.bg_amber_50, C.bor.rounded_lg, C.fil.drop_shadow_xl]
     )
-}
-
-fn background(image_name: &str) -> String {
-    format!("background-image: url(/static/{image_name})")
 }
 
 #[component]
@@ -129,6 +123,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
 
     let recipes = scope_ref.create_ref(raw_state.get().recipes.clone());
     view! { scope_ref,
+        div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
         div(class = DC![
             C.spc.p_6,
             M![M.two_xl, C.siz.w_1_of_2],
@@ -176,7 +171,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
                 C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
             ]) {
                 div(
-                    class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6],
+                    class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6, C.fil.drop_shadow_xl],
                     on:click = create_recipe,
                     style = background("plus-circle.svg")
                 )
@@ -346,7 +341,11 @@ pub async fn Viewer<'a, G: Html>(
                     ]
                 ) {
                     div(
-                        class = DC![&tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_10],
+                        class = DC![
+                            &tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_5,
+                            M![M.sm, C.spc.m_10],
+                            M![M.md, C.spc.m_10]
+                        ],
                         id = format!("recipe-{:?}", recipe_id),
                         on:dblclick = edit_recipe()
                     ) {
@@ -441,14 +440,16 @@ fn RecipeDataFormComponent<G: Html>(
     };
     view! { scope_ref,
     div(class = header()) {
-        input(type="text", value=name.get(), on:change = set_name)
+        input(class = DC![C.spc.p_1], type="text", value=name.get(), on:change = set_name)
     }
-    div(class = "recipe-body") {
+    div(
+        class = DC![C.spc.p_6]
+    ) {
         p(class = DC![C.typ.text_xl, C.typ.text_gray_600])  {"Ingredients"}
         IngredientsFormComponent(ingredients)
-            p(style = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Directions"}
-        div(class = "recipe-description") {
-            textarea(style = "width: 100%; height: 500pt;", on:change = set_description) {(description.get())}
+            p(class = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Directions"}
+        div {
+            textarea(class = DC![C.siz.w_full, C.siz.h_60], on:change = set_description) {(description.get())}
         }
     }
     }
@@ -468,11 +469,12 @@ pub fn RecipeDataComponent<G: Html>(
             p {(format!("{}", name.get()))}
         }
         div(class = DC![C.spc.p_3]) {
-            p(style = "font-weight: 600;") {"Ingredients"}
-            IngredientsComponent(ingredients)
-
-                p(style = "font-weight: 600;") {"Directions"}
-            div(class = DC![C.pro.prose], dangerously_set_inner_html = &markdown_to_html(&description.get()))
+            p(class = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Ingredients"}
+            div(class = DC![C.spc.p_3]) {
+                IngredientsComponent(ingredients)
+            }
+            p(class = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Directions"}
+            div(class = DC![C.pro.prose, C.typ.whitespace_normal,  C.siz.w_full, C.spc.p_3], dangerously_set_inner_html = &markdown_to_html(&description.get()))
         }
     }
 }
@@ -500,12 +502,12 @@ pub fn RecipeComponent<G: Html>(
         }
        ) {
         div(
-            class = DC![&tile_background(), C.siz.max_h_72, C.typ.truncate, C.lay.relative],
+            class = DC![&tile_background(), C.siz.max_h_80, C.typ.truncate, C.lay.relative],
             id = format!("recipe-{:?}", recipe_id)
            ) {
             RecipeDataComponent(recipe)
             div(class = DC![
-                C.lay.absolute, C.siz.h_20, C.siz.w_full, C.lay.bottom_0, C.bor.rounded_t_lg, C.bg.bg_gradient_to_t,
+                C.lay.absolute, C.siz.h_2_of_3, C.siz.w_full, C.lay.bottom_0, C.bor.rounded_t_lg, C.bg.bg_gradient_to_t,
                 C.bg.from_amber_50
             ])
         }

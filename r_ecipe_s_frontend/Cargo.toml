@@ -21,3 +21,4 @@ web-sys = {version = "0.3.55", features = [
         "HtmlSelectElement",
         "HtmlTextAreaElement"]}
 anyhow = "1.0"
+r_ecipe_s_style = { path = "../r_ecipe_s_style" }
