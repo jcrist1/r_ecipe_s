@@ -1,3 +1,4 @@
+use meilisearch_sdk::document::Document;
 use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Recipe {
@@ -9,7 +10,7 @@ pub struct Recipe {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct RecipeWithId {
-    pub id: RecipeId,
+    pub id: i64,
     pub data: Recipe,
 }
 
@@ -17,11 +18,6 @@ pub struct RecipeWithId {
 pub struct RecipesResponse {
     pub recipes: Vec<RecipeWithId>,
     pub total_pages: i64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
-pub struct RecipeId {
-    pub id: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -40,5 +36,13 @@ pub enum Quantity {
 impl Default for Quantity {
     fn default() -> Self {
         Quantity::Count(0)
+    }
+}
+
+impl Document for RecipeWithId {
+    type UIDType = i64;
+
+    fn get_uid(&self) -> &i64 {
+        &self.id
     }
 }

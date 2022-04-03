@@ -21,6 +21,7 @@ futures-util = "0.3.19"
 r_ecipe_s_model = { path = "../r_ecipe_s_model/"}
 time = "0.3"
 log = "0.4"
+meilisearch-sdk = "0.15.0"
 
 
 

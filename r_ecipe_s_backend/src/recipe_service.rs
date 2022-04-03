@@ -2,14 +2,19 @@ use crate::db::DBAccess;
 use actix_web::middleware::Logger;
 use actix_web::web::Query;
 use actix_web::{dev::*, http::header, web::Data, *};
+use futures::stream::BoxStream;
+use futures::Stream;
 use futures_util::{StreamExt, TryStreamExt};
 use log::{debug, error, info, log_enabled, Level};
-use r_ecipe_s_model::{Ingredient, Recipe, RecipeId, RecipeWithId, RecipesResponse};
+use r_ecipe_s_model::{Ingredient, Recipe, RecipeWithId, RecipesResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::types::time::OffsetDateTime;
 use sqlx::types::Json;
-use sqlx::FromRow;
+use sqlx::{Executor, FromRow, Postgres, Transaction};
 
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 const MAX_PAGE_SIZE: i64 = 100;
@@ -30,6 +35,9 @@ pub enum Error {
     IncorrectPageSize(i64),
 }
 type Result<T> = std::result::Result<T, Error>;
+struct RecipeId {
+    id: i64,
+}
 
 impl ResponseError for Error {
     fn status_code(&self) -> http::StatusCode {
@@ -74,6 +82,7 @@ pub struct RecipeRep {
     ingredients: sqlx::types::Json<Vec<Ingredient>>,
     description: String,
     liked: Option<bool>,
+    searchable: bool,
 }
 
 impl RecipeRep {
@@ -89,14 +98,85 @@ impl RecipeRep {
     pub fn model_with_id(self) -> RecipeWithId {
         let id = self.id;
         let data = self.model();
-        RecipeWithId {
-            id: RecipeId { id },
-            data,
-        }
+        RecipeWithId { id, data }
     }
 }
+const EMPTY_RECIPE_LIST: &[RecipeWithId] = &[];
 
 impl RecipeAccess {
+    pub(crate) async fn get_batch_for_insert<'a>(
+        &'a self,
+        batch_size: usize,
+    ) -> Result<(Vec<RecipeWithId>, sqlx::Transaction<'a, Postgres>)> {
+        let mut transaction = self.db_access.get_pool().begin().await?;
+        let data_iter = sqlx::query_as!(
+            RecipeRep,
+            r#"
+                SELECT
+                    id, 
+                    name, 
+                    ingredients as "ingredients: Json<Vec<Ingredient>>", 
+                    description, 
+                    liked,
+                    searchable
+                FROM recipes
+                WHERE searchable = false
+                ORDER BY id 
+                LIMIT $1
+            "#,
+            batch_size as i64
+        )
+        .fetch(&mut transaction)
+        .map(
+            |rep_res: std::result::Result<RecipeRep, _>| -> Result<RecipeWithId> {
+                let recipe = rep_res?;
+                Ok(recipe.model_with_id())
+            },
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+        Ok((data_iter, transaction))
+    }
+
+    pub(crate) async fn set_batch_searchable<'a>(
+        &self,
+        executor: Transaction<'a, Postgres>,
+        recipe_ids: impl Iterator<Item = &i64>, // ensure the recipe_ids are part of the transaction for update
+    ) -> Result<Vec<i64>> {
+        // let pool = executor.borrow_mut();
+        let (ret_size, _) = recipe_ids.size_hint();
+        let updated = Vec::with_capacity(ret_size);
+        let new_iter = recipe_ids;
+        let (executor, res) = futures::stream::iter(new_iter)
+            .fold(
+                Ok((executor, updated)),
+                |last_res: Result<(Transaction<Postgres>, Vec<_>)>, id| async {
+                    let (mut executor, mut updated) = last_res?;
+                    let new_res: i64 = sqlx::query_as!(
+                        RecipeId,
+                        r#"
+                            UPDATE recipes
+                                SET searchable = true
+                            WHERE
+                                id = ($1)
+                            RETURNING id;
+                        "#,
+                        *id
+                    )
+                    .fetch_one(&mut executor) // We are guaranteed to
+                    .await
+                    .map(|row| row.id)
+                    .map_err(Error::from)?;
+                    updated.push(new_res);
+                    Ok((executor, updated))
+                },
+            )
+            .await?;
+        executor.commit().await?;
+        println!("New res: {res:?}");
+        Ok(res)
+    }
+
     async fn get_all(&self, page: i64, page_size: i64) -> Result<RecipesResponse> {
         if (page_size <= 0) || (page_size > MAX_PAGE_SIZE) {
             return Err(Error::IncorrectPageSize(page_size));
@@ -110,7 +190,8 @@ impl RecipeAccess {
                     name, 
                     ingredients as "ingredients: Json<Vec<Ingredient>>", 
                     description, 
-                    liked  
+                    liked,
+                    searchable
                 FROM recipes
                 ORDER BY updated DESC
                 OFFSET $1
@@ -146,8 +227,8 @@ impl RecipeAccess {
         })
     }
 
-    async fn update(&self, id: i64, recipe: &Recipe) -> Result<Option<RecipeId>> {
-        let rec = sqlx::query_as!(
+    async fn update(&self, id: i64, recipe: &Recipe) -> Result<Option<i64>> {
+        sqlx::query_as!(
             RecipeId,
             r#"
                 UPDATE recipes SET 
@@ -155,8 +236,9 @@ impl RecipeAccess {
                     ingredients = $2, 
                     description = $3,
                     liked = $4,
-                    updated = $5
-                where id = $6 RETURNING id
+                    updated = $5,
+                    searchable = false
+                where id = $6 RETURNING id as "id!: i64"
             "#,
             recipe.name,
             sqlx::types::Json(recipe.ingredients.clone()) as _,
@@ -167,9 +249,8 @@ impl RecipeAccess {
         )
         .fetch_optional(self.db_access.get_pool())
         .await
-        .map_err(|err| err.into());
-        println!("{:?}", rec);
-        rec
+        .map(|opt| opt.map(|recipe_id| recipe_id.id))
+        .map_err(|err| err.into())
     }
 
     async fn insert(&self, recipe: &Recipe) -> Result<i64> {
@@ -182,14 +263,16 @@ impl RecipeAccess {
                     description,
                     liked,
                     created,
-                    updated
+                    updated,
+                    searchable
                 ) VALUES (
                     $1,
                     $2,
                     $3,
                     $4,
                     $5,
-                    $5
+                    $5,
+                    false
                 ) RETURNING id
             "#,
             recipe.name,
@@ -212,7 +295,8 @@ impl RecipeAccess {
                     name, 
                     ingredients as "ingredients: Json<Vec<Ingredient>>", 
                     description, 
-                    liked  
+                    liked,
+                    searchable
                 FROM recipes
                 WHERE id = $1
             "#,

@@ -1,6 +1,6 @@
 use crate::form_component::*;
 use crate::util::{background, markdown_to_html};
-use r_ecipe_s_model::{Recipe, RecipeId, RecipeWithId, RecipesResponse};
+use r_ecipe_s_model::{Recipe, RecipeWithId, RecipesResponse};
 use r_ecipe_s_style::generated::*;
 use serde::{Deserialize, Serialize};
 use sycamore::futures::ScopeSpawnFuture;
@@ -104,7 +104,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
 
             let new = create_rc_signal(
                 RecipeWithId {
-                    id: RecipeId { id },
+                    id,
                     data: empty_recipe,
                 }
                 .signal(),
@@ -164,7 +164,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
                 view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
                     RecipeComponent((selected, &recipe))
                 }},
-                key: |recipe| recipe.get().as_ref().id.id,
+                key: |recipe| recipe.get().as_ref().id,
             })
             div(class = DC![
                 C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
@@ -301,7 +301,7 @@ pub async fn Viewer<'a, G: Html>(
 
                 let recipe =
                     recipe_option.expect("Failed to get current recipe from viewer. This is a bug");
-                let recipe_id = recipe.id.id;
+                let recipe_id = recipe.id;
                 let resp = reqwasm::http::Request::post(&format!("/api/v1/recipes/{recipe_id}"))
                     .header("Content-Type", "application/json")
                     .body(JsValue::from_str(
@@ -316,7 +316,7 @@ pub async fn Viewer<'a, G: Html>(
                     .text()
                     .await
                     .expect("failed to get text from response body");
-                serde_json::from_str::<RecipeId>(&body)
+                serde_json::from_str::<i64>(&body)
                     .expect("failed to decode id and recipe from json");
                 selected.set(None);
             });
@@ -341,7 +341,7 @@ pub async fn Viewer<'a, G: Html>(
         match selected_ref.as_ref() {
             Some(selected_state) => {
                 let recipe = scope_ref.create_ref(selected_state.recipe.clone());
-                let recipe_id = recipe.get().id.id;
+                let recipe_id = recipe.get().id;
                 let recipe = scope_ref.create_ref(recipe.clone());
                 let editing = scope_ref.create_ref(selected_state.editing);
                 view! { scope_ref,
@@ -388,7 +388,7 @@ pub async fn Viewer<'a, G: Html>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecipeSignal {
-    id: RecipeId,
+    id: i64,
     name: RcSignal<String>,
     ingredients: RcSignal<Vec<RcSignal<(usize, IngredientSignal)>>>,
     description: RcSignal<String>,
@@ -495,7 +495,7 @@ pub fn RecipeComponent<G: Html>(
     scope_ref: ScopeRef,
     (selected_signal, recipe): (&RcSignal<Option<SelectedState>>, &RcSignal<RecipeSignal>),
 ) -> View<G> {
-    let recipe_id = recipe.get().id.id;
+    let recipe_id = recipe.get().id;
     let recipe = scope_ref.create_ref(recipe.clone());
     let selected_signal = scope_ref.create_ref(selected_signal.clone());
 
