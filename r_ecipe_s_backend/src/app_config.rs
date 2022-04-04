@@ -83,15 +83,15 @@ impl AppConfig {
 
         let mut search_config = conf.get::<SearchConfig>("search")?;
         if let Ok(api_key) = std::env::var("R_ECIPE_S_SEARCH_API_KEY") {
-            info!("getting api key from env");
+            info!("getting search api key from env");
             search_config.api_key = api_key
         }
         if let Ok(host) = std::env::var("R_ECIPE_S_SEARCH_HOST") {
-            info!("getting api key from env");
+            info!("getting search host key from env");
             search_config.host = host
         }
         if let Ok(port) = std::env::var("R_ECIPE_S_SEARCH_PORT") {
-            info!("getting api key from env");
+            info!("getting search port key from env");
             search_config.port = port.parse::<u16>().map_err(|_| {
                 ConfigError::Message("Failed to parse port for search config".to_string())
             })?;
