@@ -1,10 +1,11 @@
 use actix_web::{dev::*, http::header, middleware::Logger, web::Data, *};
 use futures::executor::block_on;
+use log::info;
 use std::sync::Arc;
 
 use env_logger;
 use r_ecipe_s_backend::app_config;
-use r_ecipe_s_backend::db;
+use r_ecipe_s_backend::{db, search_indexer};
 use std::env;
 use std::fs;
 use thiserror::Error as ThisError;
@@ -20,36 +21,47 @@ enum Error {
     Confg(#[from] config::ConfigError),
     #[error("r_ecipe_s database error {0}")]
     DB(#[from] db::Error),
+    #[error("r_ecipe_s search indexing error {0}")]
+    SearchIndexer(#[from] search_indexer::Error),
 }
 type Result<T> = std::result::Result<T, Error>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let conf = app_config::AppConfig::load("config/config.toml")?;
-    let db_access = Arc::new(
-        db::DBMigrator::new(&conf.db_config)
-            .await?
-            .migrate()
-            .await?,
-    );
+    let app_config::AppConfig {
+        http_config,
+        db_config,
+        search_config,
+    }: app_config::AppConfig = app_config::AppConfig::load("config/config.toml")?;
+    let db_access = Arc::new(db::DBMigrator::new(&db_config).await?.migrate().await?);
     env::set_current_dir("../frontend")?;
 
     std::env::set_var("RUST_LOG", "actix_web=info");
-    let host_port = conf.http_config.connection_string();
+    let host_port = http_config.connection_string();
+    let recipe_access = Data::new(RecipeAccess::new(&db_access));
+    let new_recipe_access = recipe_access.clone();
     let http_server = HttpServer::new(move || {
-        let recipe_access = Data::new(RecipeAccess::new(&db_access));
         App::new()
             .wrap(Logger::default())
-            .bind_recipe_routes(recipe_access)
+            .bind_recipe_routes(recipe_access.clone())
             .service(actix_files::Files::new("/static", "static"))
             .service(actix_files::Files::new("/", "dist").index_file("index.html"))
     })
     .bind(&host_port)?;
 
-    println!("Successfully bound server to {}", host_port);
+    info!("Successfully bound server to {}", host_port);
 
-    http_server.run().await?;
+    let index_loop_future = tokio::spawn(async move {
+        r_ecipe_s_backend::search_indexer::index_loop(search_config, new_recipe_access).await
+    });
+    let server_future = http_server.run();
+    let (
+        server_res,
+    ) = tokio::join!(
+        server_future,
+    );
+    server_res?;
+    index_loop_future.abort();
     Ok(())
 }
-

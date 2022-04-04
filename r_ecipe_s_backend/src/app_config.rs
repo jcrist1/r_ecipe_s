@@ -9,6 +9,8 @@ use thiserror::Error as ThisError;
 pub enum Error {
     #[error("Config Error {0}")]
     Config(#[from] ConfigError),
+    #[error("Port parse error")]
+    ParsePort,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,6 +28,19 @@ pub struct HTTPConfig {
     pub port: u16,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchConfig {
+    pub host: String,
+    pub port: u16,
+    pub api_key: String,
+}
+
+impl SearchConfig {
+    pub fn http_url(&self) -> String {
+        format!("http://{}:{}", self.host, self.port)
+    }
+}
+
 impl HTTPConfig {
     pub fn connection_string(&self) -> String {
         format!("{}:{}", self.host, self.port)
@@ -36,6 +51,7 @@ impl HTTPConfig {
 pub struct AppConfig {
     pub http_config: HTTPConfig,
     pub db_config: DBConfig,
+    pub search_config: SearchConfig,
 }
 
 impl AppConfig {
@@ -64,9 +80,27 @@ impl AppConfig {
         } else {
             info!("getting server host from file");
         }
+
+        let mut search_config = conf.get::<SearchConfig>("search")?;
+        if let Ok(api_key) = std::env::var("R_ECIPE_S_SEARCH_API_KEY") {
+            info!("getting search api key from env");
+            search_config.api_key = api_key
+        }
+        if let Ok(host) = std::env::var("R_ECIPE_S_SEARCH_HOST") {
+            info!("getting search host key from env");
+            search_config.host = host
+        }
+        if let Ok(port) = std::env::var("R_ECIPE_S_SEARCH_PORT") {
+            info!("getting search port key from env");
+            search_config.port = port.parse::<u16>().map_err(|_| {
+                ConfigError::Message("Failed to parse port for search config".to_string())
+            })?;
+        }
+
         Ok(AppConfig {
             http_config,
             db_config,
+            search_config,
         })
     }
 }

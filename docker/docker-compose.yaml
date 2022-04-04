@@ -13,6 +13,9 @@ services:
       R_ECIPE_S_DB_PASSWORD: secret123
       R_ECIPE_S_DB_HOST: postgres
       R_ECIPE_S_SERVER_HOST: ${R_ECIPE_S_SERVER_HOST}0.0.0.0
+      R_ECIPE_S_SEARCH_API_KEY: secret
+      R_ECIPE_S_SEARCH_HOST: meilisearch
+      R_ECIPE_S_SEARCH_PORT: "7700"
   postgres:
     image: postgres:14.1-alpine3.15
     ports: 
@@ -24,6 +27,15 @@ services:
       PGDATA: /pg_data/
     volumes:
       - pg_data:/pg_data
+  meilisearch:
+    image: getmeili/meilisearch:v0.26.1
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: secret
+    volumes:
+      - meili_data:/data.ms
 
 volumes:
   pg_data: 
+  meili_data:
