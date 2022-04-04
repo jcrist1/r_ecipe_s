@@ -29,17 +29,16 @@ type Result<T> = std::result::Result<T, Error>;
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let conf = app_config::AppConfig::load("config/config.toml")?;
-    let db_access = Arc::new(
-        db::DBMigrator::new(&conf.db_config)
-            .await?
-            .migrate()
-            .await?,
-    );
+    let app_config::AppConfig {
+        http_config,
+        db_config,
+        search_config,
+    }: app_config::AppConfig = app_config::AppConfig::load("config/config.toml")?;
+    let db_access = Arc::new(db::DBMigrator::new(&db_config).await?.migrate().await?);
     env::set_current_dir("../frontend")?;
 
     std::env::set_var("RUST_LOG", "actix_web=info");
-    let host_port = conf.http_config.connection_string();
+    let host_port = http_config.connection_string();
     let recipe_access = Data::new(RecipeAccess::new(&db_access));
     let new_recipe_access = recipe_access.clone();
     let http_server = HttpServer::new(move || {
@@ -54,16 +53,13 @@ async fn main() -> Result<()> {
     info!("Successfully bound server to {}", host_port);
 
     let index_loop_future = tokio::spawn(async move {
-        env_logger::init();
-        r_ecipe_s_backend::search_indexer::index_loop(new_recipe_access).await
+        r_ecipe_s_backend::search_indexer::index_loop(search_config, new_recipe_access).await
     });
     let server_future = http_server.run();
     let (
         server_res,
-        //index_res//,
     ) = tokio::join!(
         server_future,
-        //index_loop_future,
     );
     server_res?;
     index_loop_future.abort();

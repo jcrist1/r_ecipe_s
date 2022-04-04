@@ -1,12 +1,15 @@
 use actix_web::web::Data;
-use log::{debug, error};
+use log::{debug, error, info};
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::errors::Error as MeiliError;
 use meilisearch_sdk::indexes::Index;
 use std::time::Duration;
 use thiserror::Error as ThisError;
 
-use crate::recipe_service::{self, RecipeAccess};
+use crate::{
+    app_config::SearchConfig,
+    recipe_service::{self, RecipeAccess},
+};
 
 #[derive(Debug, ThisError)]
 pub enum Error {
@@ -22,11 +25,6 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-struct SearchConfig {
-    host: String,
-    api_key: String,
-}
-
 const R_ECIPE_S_INDEX_NAME: &str = "r_ecipe_s";
 
 struct SearchIndexer {
@@ -35,7 +33,9 @@ struct SearchIndexer {
 }
 impl SearchIndexer {
     fn new(search_config: SearchConfig, recipe_access: Data<RecipeAccess>) -> Self {
-        let search_client = Client::new(search_config.host, search_config.api_key);
+        let url = search_config.http_url();
+        info!("Search URL: {url}");
+        let search_client = Client::new(url, search_config.api_key);
         SearchIndexer {
             search_client,
             recipe_access,
@@ -81,11 +81,10 @@ impl CanIndex {
     }
 }
 
-pub async fn index_loop(recipe_access: Data<RecipeAccess>) -> Result<()> {
-    let search_config = SearchConfig {
-        host: String::from("http://localhost:7700"),
-        api_key: String::from("secret"),
-    };
+pub async fn index_loop(
+    search_config: SearchConfig,
+    recipe_access: Data<RecipeAccess>,
+) -> Result<()> {
     println!("Starting background job");
     let indexer = SearchIndexer::new(search_config, recipe_access);
     let index = indexer.search_client.index(R_ECIPE_S_INDEX_NAME);
@@ -97,12 +96,10 @@ pub async fn index_loop(recipe_access: Data<RecipeAccess>) -> Result<()> {
                 error!("ERROR {err:?}");
                 Ok(())
             }
-            Ok(res) => {
-                // println!("Res: {res:?}");
+            Ok(_res) => {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 Ok(())
             }
         };
     }
-    Ok(())
 }

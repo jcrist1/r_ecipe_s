@@ -7,4 +7,9 @@ password = "secret"
 
 [http]
 port = 8000
-host = "0.0.0.0"
+host = "[::]"
+
+[search]
+port = 80
+host = "r-ecipe-s-search.internal"
+api_key = "secret"
