@@ -1,20 +1,29 @@
 use crate::db::DBAccess;
-use actix_web::middleware::Logger;
-use actix_web::web::Query;
-use actix_web::{dev::*, http::header, web::Data, *};
-use futures::stream::BoxStream;
-use futures::Stream;
+use axum::body::HttpBody;
+use axum::Router;
+// use actix_web::web::Query;
+// use actix_web::{dev::*, http::header, web::Data, *};
+use axum::extract::Extension;
+use axum::extract::Path;
+use axum::extract::Query;
+use axum::http;
+use axum::http::Request;
+use axum::response::IntoResponse;
+use axum::response::Response;
+use axum::routing::get;
+use axum::routing::post;
+use axum::routing::put;
+use axum::Json as HttpJson;
 use futures_util::{StreamExt, TryStreamExt};
-use log::{debug, error, info, log_enabled, Level};
 use r_ecipe_s_model::{Ingredient, Recipe, RecipeWithId, RecipesResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::types::time::OffsetDateTime;
 use sqlx::types::Json;
-use sqlx::{Executor, FromRow, Postgres, Transaction};
+use sqlx::{FromRow, Postgres, Transaction};
+use tower_service::Service;
+use tracing::log::error;
 
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::convert::Infallible;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 const MAX_PAGE_SIZE: i64 = 100;
@@ -34,42 +43,67 @@ pub enum Error {
     #[error("Incorrect page size: {0}. Must be between 1 and 100")]
     IncorrectPageSize(i64),
 }
+
+unsafe impl Sync for Error {} // todo: delete
 type Result<T> = std::result::Result<T, Error>;
 struct RecipeId {
     id: i64,
 }
 
-impl ResponseError for Error {
-    fn status_code(&self) -> http::StatusCode {
-        match self {
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let error_code = match self {
             Error::Fail => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::Serde(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::DB(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::ParseInt(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::Missing { .. } => http::StatusCode::NOT_FOUND,
             Error::IncorrectPageSize(_) => http::StatusCode::BAD_REQUEST,
-        }
+        };
+        (error_code, format!("{self:?}")).into_response()
     }
 }
 
 pub trait RecipeService {
     type ServiceType;
-    fn bind_recipe_routes(self, recipe_access: Data<RecipeAccess>) -> Self::ServiceType;
+    fn bind_recipe_routes(self, recipe_access: &Arc<RecipeAccess>) -> Self::ServiceType;
 }
 
-impl<T> RecipeService for App<T>
+impl<T, HttpError, Data> RecipeService for Router<T>
 where
-    T: ServiceFactory<ServiceRequest, Config = (), Error = actix_web::Error, InitError = ()>,
+    T: HttpBody<Error = HttpError, Data = Data> + Send + 'static,
+    HttpError: Sync + Send + std::error::Error + 'static,
+    Data: Send + 'static,
 {
     type ServiceType = Self;
-    fn bind_recipe_routes(self, recipe_access: Data<RecipeAccess>) -> Self::ServiceType {
-        self.app_data(recipe_access)
-            .service(get_all)
-            .service(get)
-            .service(put)
-            .service(post)
+    fn bind_recipe_routes(self, recipe_access: &Arc<RecipeAccess>) -> Self::ServiceType {
+        self.route(
+            "/recipes",
+            get({
+                let recipe_access = recipe_access.clone();
+                |query| get_all(recipe_access, query)
+            })
+            .put({
+                let recipe_access = recipe_access.clone();
+                |form| put_recipe(form, recipe_access)
+            }),
+        )
+        .route(
+            "/recipes/:id",
+            // "/recipes/:id",
+            post({
+                let recipe_access = recipe_access.clone();
+                |path, form_data| post_recipe(path, form_data, recipe_access)
+            })
+            .get({
+                let recipe_access = recipe_access.clone();
+                |path| get_recipe(path, recipe_access)
+            }),
+        )
     }
 }
+//    }
+//}
 
 pub struct RecipeAccess {
     db_access: Arc<DBAccess>,
@@ -101,13 +135,14 @@ impl RecipeRep {
         RecipeWithId { id, data }
     }
 }
+
 const EMPTY_RECIPE_LIST: &[RecipeWithId] = &[];
 
 impl RecipeAccess {
-    pub(crate) async fn get_batch_for_insert<'a>(
-        &'a self,
+    pub(crate) async fn get_batch_for_insert(
+        &self,
         batch_size: usize,
-    ) -> Result<(Vec<RecipeWithId>, sqlx::Transaction<'a, Postgres>)> {
+    ) -> Result<(Vec<RecipeWithId>, sqlx::Transaction<'_, Postgres>)> {
         let mut transaction = self.db_access.get_pool().begin().await?;
         let data_iter = sqlx::query_as!(
             RecipeRep,
@@ -324,63 +359,48 @@ pub struct Paging {
 
 const PAGE_SIZE: i64 = 9;
 
-#[get("api/v1/recipes")]
 pub(crate) async fn get_all(
-    recipe_access: Data<RecipeAccess>,
+    recipe_access: Arc<RecipeAccess>,
     page: Query<Paging>,
-) -> Result<HttpResponse> {
+) -> Result<HttpJson<RecipesResponse>> {
     let page = page.offset;
     let data = recipe_access.get_all(page.unwrap_or(0), PAGE_SIZE).await?;
 
-    let body = serde_json::to_string(&data)?;
+    //let body = serde_json::to_string(&data)?;
 
-    Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType::json())
-        .body(body))
+    Ok(data.into())
 }
 
-#[get("api/v1/recipes/{id}")]
-pub(crate) async fn get(
-    path: web::Path<i64>,
-    recipe_access: Data<RecipeAccess>,
-) -> Result<HttpResponse> {
-    let id = path.into_inner();
+pub(crate) async fn get_recipe(
+    path: Path<i64>,
+    recipe_access: Arc<RecipeAccess>,
+) -> Result<HttpJson<RecipeWithId>> {
+    let id = *path;
     let data_option = recipe_access.get_by_id(id).await?;
     let data = data_option.ok_or_else(|| Error::Missing {
         item_type: "recipe".to_string(),
         id,
     })?;
 
-    debug!("Request data {:?}", data);
-
-    let body = serde_json::to_string(&data)?;
-
-    Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType::json())
-        .body(body))
+    Ok(data.into())
 }
 
-#[put("api/v1/recipes")]
-pub(crate) async fn put(
-    recipe_access: Data<RecipeAccess>,
-    form: web::Json<Recipe>,
-) -> Result<HttpResponse> {
+pub(crate) async fn put_recipe(
+    form: HttpJson<Recipe>,
+    recipe_access: Arc<RecipeAccess>,
+) -> Result<HttpJson<i64>> {
     let id = recipe_access.insert(&form).await?;
 
-    Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType::json())
-        .body(serde_json::to_string(&id)?))
+    Ok(id.into())
 }
 
-#[post("api/v1/recipes/{id}")]
-pub(crate) async fn post(
-    path: web::Path<i64>,
-    recipe_access: Data<RecipeAccess>,
-    form: web::Json<Recipe>,
-) -> Result<HttpResponse> {
-    let id = path.into_inner();
+pub(crate) async fn post_recipe(
+    path: Path<i64>,
+    form: HttpJson<Recipe>,
+    recipe_access: Arc<RecipeAccess>,
+) -> Result<HttpJson<i64>> {
+    let id = *path;
 
-    debug!("Request data {:?}", form);
     let recipe = recipe_access
         .update(id, &form)
         .await?
@@ -389,7 +409,5 @@ pub(crate) async fn post(
             id,
         })?;
 
-    Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType::json())
-        .body(serde_json::to_string(&recipe)?))
+    Ok(recipe.into())
 }

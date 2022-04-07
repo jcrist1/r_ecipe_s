@@ -20,5 +20,8 @@ futures = "0.3"
 futures-util = "0.3.19"
 r_ecipe_s_model = { path = "../r_ecipe_s_model/"}
 time = "0.3"
-log = "0.4"
 meilisearch-sdk = { path = "../../meilisearch-rust" }
+axum = {version = "0.5", features = ["headers"]}
+tower-service = "0.3"
+async-trait = "0.1.53"
+tracing = "0.1"
