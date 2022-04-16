@@ -2,6 +2,7 @@
 use axum::http::StatusCode;
 use axum::Router;
 use futures::executor::block_on;
+use futures::future::abortable;
 use log::info;
 use r_ecipe_s_backend::auth::BearerValidation;
 use std::net::{AddrParseError, SocketAddr};
@@ -36,6 +37,8 @@ enum Error {
     SearchIndexer(#[from] search_indexer::Error),
     #[error("Failed to parse address from connection config: {0}")]
     AddrParse(#[from] AddrParseError),
+    #[error("{0}")]
+    Message(String),
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -101,10 +104,25 @@ async fn main() -> Result<()> {
     tracing::info!("Successfully bound server to {}", host_port);
     let http_server = axum::Server::bind(&sock_addr).serve(app.into_make_service());
 
-    let index_loop_future = tokio::spawn(async move {
-        r_ecipe_s_backend::search_indexer::index_loop(search_config, recipe_access).await
+    let tasks = tokio::spawn(async move {
+        tokio::join!(
+            r_ecipe_s_backend::search_indexer::index_loop(search_config, recipe_access),
+            http_server
+        )
     });
-    http_server.await.expect("Don't forget to map this error");
-    index_loop_future.abort();
+    let (fut, handle) = abortable(tasks);
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        handle.abort();
+        hook(info);
+    }));
+    let res = fut
+        .await
+        .map_err(|_err| Error::Message("Failed to run server tasks".into()))?;
+    let (index_loop_res, server_res) =
+        res.map_err(|err| Error::Message(format!("Some kind of join error: {err:?}")))?;
+    index_loop_res?;
+    server_res.map_err(|err| Error::Message(format!("Error in server: {err:?}")))?;
+
     Ok(())
 }

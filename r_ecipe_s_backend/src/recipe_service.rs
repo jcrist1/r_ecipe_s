@@ -221,7 +221,6 @@ impl RecipeAccess {
             )
             .await?;
         executor.commit().await?;
-        println!("New res: {res:?}");
         Ok(res)
     }
 
