@@ -1130,6 +1130,12 @@ select {
   height: 3rem;
 }
 
+.h-fit {
+  height: -webkit-fit-content;
+  height: -moz-fit-content;
+  height: fit-content;
+}
+
 .h-24 {
   height: 6rem;
 }
@@ -1156,6 +1162,14 @@ select {
 
 .max-h-80 {
   max-height: 20rem;
+}
+
+.min-h-screen {
+  min-height: 100vh;
+}
+
+.min-h-full {
+  min-height: 100%;
 }
 
 .w-20 {
