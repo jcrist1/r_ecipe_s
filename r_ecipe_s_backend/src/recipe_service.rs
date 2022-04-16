@@ -1,29 +1,23 @@
-use crate::db::DBAccess;
-use axum::body::HttpBody;
-use axum::Router;
-// use actix_web::web::Query;
-// use actix_web::{dev::*, http::header, web::Data, *};
-use axum::extract::Extension;
-use axum::extract::Path;
-use axum::extract::Query;
-use axum::http;
-use axum::http::Request;
-use axum::response::IntoResponse;
-use axum::response::Response;
-use axum::routing::get;
-use axum::routing::post;
-use axum::routing::put;
-use axum::Json as HttpJson;
+use crate::{
+    auth::{AuthError, BearerToken, BearerValidation},
+    db::DBAccess,
+};
+use axum::{
+    body::HttpBody,
+    extract::{Path, Query},
+    http,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json as HttpJson, Router,
+};
 use futures_util::{StreamExt, TryStreamExt};
 use r_ecipe_s_model::{Ingredient, Recipe, RecipeWithId, RecipesResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::types::time::OffsetDateTime;
 use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, Transaction};
-use tower_service::Service;
 use tracing::log::error;
 
-use std::convert::Infallible;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 const MAX_PAGE_SIZE: i64 = 100;
@@ -42,9 +36,10 @@ pub enum Error {
     Missing { item_type: String, id: i64 },
     #[error("Incorrect page size: {0}. Must be between 1 and 100")]
     IncorrectPageSize(i64),
+    #[error("Error with authentication: {0}")]
+    Auth(#[from] AuthError),
 }
 
-unsafe impl Sync for Error {} // todo: delete
 type Result<T> = std::result::Result<T, Error>;
 struct RecipeId {
     id: i64,
@@ -59,6 +54,7 @@ impl IntoResponse for Error {
             Error::ParseInt(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
             Error::Missing { .. } => http::StatusCode::NOT_FOUND,
             Error::IncorrectPageSize(_) => http::StatusCode::BAD_REQUEST,
+            Error::Auth(_) => http::StatusCode::BAD_REQUEST,
         };
         (error_code, format!("{self:?}")).into_response()
     }
@@ -66,7 +62,11 @@ impl IntoResponse for Error {
 
 pub trait RecipeService {
     type ServiceType;
-    fn bind_recipe_routes(self, recipe_access: &Arc<RecipeAccess>) -> Self::ServiceType;
+    fn bind_recipe_routes(
+        self,
+        recipe_access: &Arc<RecipeAccess>,
+        bearer_validation: &Arc<BearerValidation>,
+    ) -> Self::ServiceType;
 }
 
 impl<T, HttpError, Data> RecipeService for Router<T>
@@ -76,7 +76,11 @@ where
     Data: Send + 'static,
 {
     type ServiceType = Self;
-    fn bind_recipe_routes(self, recipe_access: &Arc<RecipeAccess>) -> Self::ServiceType {
+    fn bind_recipe_routes(
+        self,
+        recipe_access: &Arc<RecipeAccess>,
+        bearer_validation: &Arc<BearerValidation>,
+    ) -> Self::ServiceType {
         self.route(
             "/recipes",
             get({
@@ -85,15 +89,24 @@ where
             })
             .put({
                 let recipe_access = recipe_access.clone();
-                |form| put_recipe(form, recipe_access)
+                let bearer_validation = bearer_validation.clone();
+                |form, bearer_auth| put_recipe(form, bearer_auth, recipe_access, bearer_validation)
             }),
         )
         .route(
             "/recipes/:id",
-            // "/recipes/:id",
             post({
                 let recipe_access = recipe_access.clone();
-                |path, form_data| post_recipe(path, form_data, recipe_access)
+                let bearer_validation = bearer_validation.clone();
+                |path, bearer_auth, form_data| {
+                    post_recipe(
+                        path,
+                        bearer_auth,
+                        form_data,
+                        recipe_access,
+                        bearer_validation,
+                    )
+                }
             })
             .get({
                 let recipe_access = recipe_access.clone();
@@ -387,8 +400,11 @@ pub(crate) async fn get_recipe(
 
 pub(crate) async fn put_recipe(
     form: HttpJson<Recipe>,
+    bearer_auth: BearerToken,
     recipe_access: Arc<RecipeAccess>,
+    bearer_validation: Arc<BearerValidation>,
 ) -> Result<HttpJson<i64>> {
+    bearer_validation.authorise(bearer_auth)?;
     let id = recipe_access.insert(&form).await?;
 
     Ok(id.into())
@@ -396,9 +412,12 @@ pub(crate) async fn put_recipe(
 
 pub(crate) async fn post_recipe(
     path: Path<i64>,
+    bearer_auth: BearerToken,
     form: HttpJson<Recipe>,
     recipe_access: Arc<RecipeAccess>,
+    bearer_validation: Arc<BearerValidation>,
 ) -> Result<HttpJson<i64>> {
+    bearer_validation.authorise(bearer_auth)?;
     let id = *path;
 
     let recipe = recipe_access

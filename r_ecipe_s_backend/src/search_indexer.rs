@@ -1,4 +1,3 @@
-use actix_web::web::Data;
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::errors::Error as MeiliError;
 use meilisearch_sdk::indexes::Index;

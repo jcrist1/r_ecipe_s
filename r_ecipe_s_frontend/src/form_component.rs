@@ -1,9 +1,9 @@
-use crate::util::background;
+use crate::util::{background, recover_default_and_log_err, FrontErr};
 use r_ecipe_s_model::{Ingredient, Quantity};
 use r_ecipe_s_style::generated::*;
 use sycamore::{prelude::*, rt::JsCast};
 use tailwindcss_to_rust_macros::*;
-use web_sys::{Event, HtmlInputElement, HtmlSelectElement};
+use web_sys::{Event, EventTarget, HtmlInputElement, HtmlSelectElement};
 
 pub trait DataToSignal {
     type SignalType;
@@ -41,22 +41,28 @@ fn QuantityComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quantity>
 #[component]
 fn QuantityFormComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quantity>) -> View<G> {
     let quantity = scope_ref.create_ref(quantity.clone());
-    let selected_handler = move |event: Event| {
-        let target = event
-            .target()
-            .expect("Failed to get event target for change event");
-        let input_element = target
-            .dyn_into::<HtmlSelectElement>()
-            .expect("Failed to convert to input element");
+    let selected_handler = move |event: Event| -> Result<(), FrontErr> {
+        let target = event.target();
+        let target = target.map(|res| Ok(res)).unwrap_or_else(|| {
+            Err(FrontErr::Message(
+                "Failed to get event target for change event".into(),
+            ))
+        })?;
+        let input_element = target.dyn_into::<HtmlSelectElement>().map_err(|err| {
+            FrontErr::Message(format!("Failed to convert to input element: {err:?}"))
+        })?;
         let value = input_element.value();
         let new = match value {
-            some_str if some_str == COUNT => Quantity::Count(0),
-            some_str if some_str == GRAM => Quantity::Gram(0),
-            some_str if some_str == TSP => Quantity::Tsp(0),
-            _ => panic!("invalid input value"),
-        };
+            some_str if some_str == COUNT => Ok(Quantity::Count(0)),
+            some_str if some_str == GRAM => Ok(Quantity::Gram(0)),
+            some_str if some_str == TSP => Ok(Quantity::Tsp(0)),
+            _ => Err(FrontErr::Message("invalid input value".into())),
+        }?;
         quantity.set(new);
+        Ok(())
     };
+    let selected_handler =
+        move |event| recover_default_and_log_err("failed to set selected", selected_handler(event));
 
     let quantity_handler = move |event: Event| {
         let input_value: usize = event
@@ -167,14 +173,18 @@ pub fn IngredientFormComponent<G: Html>(
     ingredient: &RcSignal<(usize, IngredientSignal)>,
 ) -> View<G> {
     let ingredient_with_id = scope_ref.create_ref(ingredient.clone());
-    let name_handler = move |event: Event| {
+    let name_handler_res = move |event: Event| -> Result<(), FrontErr> {
         let (id, ingredient) = &*ingredient_with_id.get();
         let name_signal = ingredient.name.clone();
-        let input_value: String = event
-            .target()
-            .expect("Failed to get even target for ingredient name change event")
+        let input_value: Option<EventTarget> = event.target();
+        let input_value = input_value
+            .ok_or_else(|| {
+                FrontErr::Message(
+                    "Failed to get even target for ingredient name change event".into(),
+                )
+            })?
             .dyn_into::<HtmlInputElement>()
-            .expect("Failed to convert ingredient name change event target to input element")
+            .map_err(|err| FrontErr::Message(format!("Failed to convert ingredient name change event target to input element: {err:?}")))?
             .value();
 
         name_signal.set(input_value);
@@ -186,7 +196,10 @@ pub fn IngredientFormComponent<G: Html>(
                 quantity: quantity_signal,
             },
         ));
+        Ok(())
     };
+    let name_handler =
+        move |event| recover_default_and_log_err("Failed to update name", name_handler_res(event));
     let ingredient = &scope_ref.create_ref(ingredient_with_id.get()).as_ref().1;
     let quantity = scope_ref.create_ref(ingredient.quantity.clone());
     let name = scope_ref.create_ref(ingredient.name.clone());

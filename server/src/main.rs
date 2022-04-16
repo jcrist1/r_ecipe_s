@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::Router;
 use futures::executor::block_on;
 use log::info;
+use r_ecipe_s_backend::auth::BearerValidation;
 use std::net::{AddrParseError, SocketAddr};
 use std::sync::Arc;
 
@@ -55,14 +56,18 @@ async fn main() -> Result<()> {
     let db_access = Arc::new(db::DBMigrator::new(&db_config).await?.migrate().await?);
     env::set_current_dir("../frontend")?;
 
-    std::env::set_var("RUST_LOG", "actix_web=info");
+    std::env::set_var("RUST_LOG", "axum=info,sqlx=warn");
+    let api_key = std::env::var("API_KEY").expect("API_KEY  environment variable is not set");
+    let bearer_validation = Arc::new(BearerValidation::new(&api_key));
     let host_port = http_config.connection_string();
     let recipe_access = Arc::new(RecipeAccess::new(&db_access));
 
     let sock_addr = SocketAddr::new(http_config.host.parse()?, http_config.port); //&host_port.parse()?;
     let app = Router::new()
-        .nest("/api/v1", Router::new().bind_recipe_routes(&recipe_access))
-        .bind_recipe_routes(&recipe_access)
+        .nest(
+            "/api/v1",
+            Router::new().bind_recipe_routes(&recipe_access, &bearer_validation),
+        )
         .nest(
             "/static",
             get_service(ServeDir::new("static")).handle_error(|error: std::io::Error| async move {
