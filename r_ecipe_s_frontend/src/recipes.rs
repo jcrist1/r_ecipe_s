@@ -76,13 +76,6 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
     let selected_for_event = scope_ref.create_ref(modal_view.clone());
     let create_recipe = |_| {
         scope_ref.spawn_future(async {
-            let mut vec = raw_state
-                .get()
-                .recipes
-                .get()
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>();
             let empty_recipe = Recipe {
                 description: String::new(),
                 ingredients: vec![],
@@ -137,75 +130,77 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
 
     let recipes = scope_ref.create_ref(raw_state.get().recipes.clone());
     view! { scope_ref,
-        div(class = DC![C.lay.flex]) {
-            div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
-            div(class = DC![C.fg.flex_auto])
-            ({
-                let modal_view = raw_state.get().modal_view.clone();
-                let authentication_signal = raw_state.get().authentication_status.clone();
-                let authenticate = move |_| {
-                    modal_view.set(Some(ModalView::Authenticate(authentication_signal.clone())));
-                };
-                view! {scope_ref,
-                    div(
-                        class = DC![C.siz.w_8, C.siz.h_8, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.mr_6],
-                        style = background("lock.svg"),
-                        on:click = authenticate
-                    ) {}
-                }
-            })
-        }
-        div(class = DC![
-            C.spc.p_6,
-            M![M.two_xl, C.siz.w_1_of_2],
-            M![M.xl, C.siz.w_1_of_2],
-            M![M.lg, C.siz.w_full],
-            M![M.md, C.siz.w_full],
-            M![M.sm, C.siz.w_full],
-        ]) {
+        div(class = DC![C.siz.h_fit, C.siz.min_h_screen]) {
+            div(class = DC![C.lay.flex]) {
+                div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
+                div(class = DC![C.fg.flex_auto])
+                ({
+                    let modal_view = raw_state.get().modal_view.clone();
+                    let authentication_signal = raw_state.get().authentication_status.clone();
+                    let authenticate = move |_| {
+                        modal_view.set(Some(ModalView::Authenticate(authentication_signal.clone())));
+                    };
+                    view! {scope_ref,
+                        div(
+                            class = DC![C.siz.w_8, C.siz.h_8, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.mr_6],
+                            style = background("lock.svg"),
+                            on:click = authenticate
+                        ) {}
+                    }
+                })
+            }
             div(class = DC![
-                C.lay.flex, C.fg.content_center, C.spc.p_5, C.bg.bg_amber_50, C.bor.rounded_lg,
-                C.fil.drop_shadow_xl
+                C.spc.p_6,
+                M![M.two_xl, C.siz.w_1_of_2],
+                M![M.xl, C.siz.w_1_of_2],
+                M![M.lg, C.siz.w_full],
+                M![M.md, C.siz.w_full],
+                M![M.sm, C.siz.w_full],
             ]) {
-                div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {"RecipeS"}
-                Suspense {
-                    fallback: view! {scope_ref, ""},
-                    LeftButton(raw_state)
-                }
-                PagePosition(raw_state)
-                Suspense {
-                    fallback: view! {scope_ref, ""},
-                    RightButton(raw_state)
+                div(class = DC![
+                    C.lay.flex, C.fg.content_center, C.spc.p_5, C.bg.bg_amber_50, C.bor.rounded_lg,
+                    C.fil.drop_shadow_xl
+                ]) {
+                    div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {"RecipeS"}
+                    Suspense {
+                        fallback: view! {scope_ref, ""},
+                        LeftButton(raw_state)
+                    }
+                    PagePosition(raw_state)
+                    Suspense {
+                        fallback: view! {scope_ref, ""},
+                        RightButton(raw_state)
+                    }
                 }
             }
-        }
+            Modal((modal_view, scope_ref.create_ref(raw_state.get().authentication_status.clone())))
 
-        Modal((modal_view, scope_ref.create_ref(raw_state.get().authentication_status.clone())))
-        div(class = DC![
-            C.lay.grid,
-            C.fg.grid_cols_1,
-            C.fg.gap_6,
-            C.spc.p_5,
-            M![M.two_xl, C.fg.grid_cols_3],
-            M![M.xl, C.fg.grid_cols_3],
-            M![M.lg, C.fg.grid_cols_2],
-        ]) {
-            Keyed(KeyedProps {
-                iterable: recipes,
-                view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
-                    RecipeComponent((modal_view.clone(), recipe.clone()))
-                }},
-                key: |recipe| recipe.get().as_ref().id,
-            })
             div(class = DC![
-                C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
-                C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
+                C.lay.grid,
+                C.fg.grid_cols_1,
+                C.fg.gap_6,
+                C.spc.p_5,
+                M![M.two_xl, C.fg.grid_cols_3],
+                M![M.xl, C.fg.grid_cols_3],
+                M![M.lg, C.fg.grid_cols_2],
             ]) {
-                div(
-                    class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6, C.fil.drop_shadow_xl],
-                    on:click = create_recipe,
-                    style = background("plus-circle.svg")
-                )
+                Keyed(KeyedProps {
+                    iterable: recipes,
+                    view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
+                        RecipeComponent((modal_view.clone(), recipe.clone()))
+                    }},
+                    key: |recipe| recipe.get().as_ref().id,
+                })
+                div(class = DC![
+                    C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
+                    C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
+                ]) {
+                    div(
+                        class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6, C.fil.drop_shadow_xl],
+                        on:click = create_recipe,
+                        style = background("plus-circle.svg")
+                    )
+                }
             }
         }
     }
@@ -328,26 +323,25 @@ pub async fn Modal<'a, G: Html>(
     let (modal_view, authentication_signal) = modal_view_and_authentication;
     let close_modal = move || {
         move |_: Event| {
-            let modal_view_clone = modal_view.clone();
+            // let modal_view_clone = modal_view.clone();
             let authentication_signal = authentication_signal.clone();
             scope_ref.spawn_future(async move {
-                let res = if let Some(view) = modal_view.clone().get().as_ref() {
+                let res = if let Some(view) = modal_view.get().as_ref() {
                     view.on_close(authentication_signal).await
                 } else {
                     Ok(())
                 };
                 recover_default_and_log_err("Failed to save recipe: ", res);
-                modal_view_clone.set(None);
+                modal_view.set(None);
             });
         }
     };
     view! { scope_ref, (modal_view.get().as_ref().clone().map(|modal_view| {
-        let modal_view_clone = modal_view.clone();
         view! { scope_ref,
 
             div(
                 class = DC![
-                    C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.fixed, C.lay.block,
+                    C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.min_h_full, C.siz.h_fit, C.lay.fixed, C.lay.block,
                     C.fg.place_items_center, C.fg.content_center, C.lay.z_10
                 ]
             ) {
@@ -368,7 +362,7 @@ pub async fn Modal<'a, G: Html>(
                         ModalView::Authenticate(authentication_signal) => view! { scope_ref, AuthenticationModal(authentication_signal.clone())}
                     }
                 )
-                div(class = DC![C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_10], on:click = close_modal()) { br }
+                div(class = DC![C.lay.absolute, C.lay.fixed, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_10], on:click = close_modal()) { br }
             }
         }
     }).unwrap_or_else(|| view! { scope_ref, "" }))}
@@ -418,8 +412,6 @@ pub async fn AuthenticationModal<'a, G: Html>(
     let authentication_signal = scope_ref.create_ref(authentication_signal);
     view! { scope_ref, ( {
         let set_token = move |event: Event| -> std::result::Result<(), FrontErr> {
-            let authentication_signal_clone = (&authentication_signal).clone();
-            let token = &authentication_signal_clone.get().0;
             let input_value: Option<EventTarget> = event.target();
             let input_value = input_value
                 .ok_or_else(|| {
@@ -432,7 +424,7 @@ pub async fn AuthenticationModal<'a, G: Html>(
                     ))
                 })?
                 .value();
-            authentication_signal_clone.set(AuthenticationToken(input_value.into()));
+            authentication_signal.set(AuthenticationToken(input_value));
             Ok(())
         };
         let set_token = move |event: Event| {
@@ -566,13 +558,12 @@ pub fn RecipeDataComponent<G: Html>(
 }
 
 #[component]
-pub fn RecipeComponent<'a, G: Html>(
-    scope_ref: ScopeRef<'a>,
+pub fn RecipeComponent<G: Html>(
+    scope_ref: ScopeRef,
     (modal_view, recipe): (RcSignal<Option<ModalView>>, RcSignal<RecipeSignal>),
 ) -> View<G> {
     let recipe_id = recipe.get().id;
-    let recipe = scope_ref.create_ref(recipe.clone());
-    let selected_signal = scope_ref.create_ref(modal_view.clone());
+    let recipe = scope_ref.create_ref(recipe);
 
     view! { scope_ref,
         div(

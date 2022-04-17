@@ -9,7 +9,7 @@ services:
       - sh
       - entrypoint.sh
     environment:
-      RUST_LOG: tower_http=debug,sqlx=warn
+      RUST_LOG: info,tower_http=debug,sqlx=warn
       R_ECIPE_S_DB_PASSWORD: secret123
       R_ECIPE_S_DB_HOST: postgres
       R_ECIPE_S_SERVER_HOST: ${R_ECIPE_S_SERVER_HOST}0.0.0.0

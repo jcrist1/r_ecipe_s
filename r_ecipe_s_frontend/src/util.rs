@@ -21,7 +21,7 @@ pub fn recover_default_and_log_err<T: Default, E: Debug>(msg: &str, result: Resu
     match result {
         Ok(t) => t,
         Err(err) => {
-            unsafe { web_sys::console::log_1(&format!("Failed to save data: {err:?}").into()) }
+            web_sys::console::log_1(&format!("{msg}: {err:?}").into());
             T::default()
         }
     }
