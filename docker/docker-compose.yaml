@@ -9,11 +9,12 @@ services:
       - sh
       - entrypoint.sh
     environment:
-      RUST_LOG: info
+      RUST_LOG: info,tower_http=debug,sqlx=warn
       R_ECIPE_S_DB_PASSWORD: secret123
       R_ECIPE_S_DB_HOST: postgres
       R_ECIPE_S_SERVER_HOST: ${R_ECIPE_S_SERVER_HOST}0.0.0.0
       R_ECIPE_S_SEARCH_API_KEY: secret
+      API_KEY: secret123
       R_ECIPE_S_SEARCH_HOST: meilisearch
       R_ECIPE_S_SEARCH_PORT: "7700"
   postgres:

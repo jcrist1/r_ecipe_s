@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 r_ecipe_s_frontend = { path = "../r_ecipe_s_frontend" }
 sycamore = {version = "0.8.0-beta.2", features = ["suspense"]}
+thiserror = "1"

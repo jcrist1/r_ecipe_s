@@ -1,10 +1,9 @@
-use actix_web::web::Data;
-use log::{debug, error, info};
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::errors::Error as MeiliError;
 use meilisearch_sdk::indexes::Index;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use thiserror::Error as ThisError;
+use tracing::log::{debug, error, info};
 
 use crate::{
     app_config::SearchConfig,
@@ -29,10 +28,10 @@ const R_ECIPE_S_INDEX_NAME: &str = "r_ecipe_s";
 
 struct SearchIndexer {
     search_client: Client,
-    recipe_access: Data<RecipeAccess>,
+    recipe_access: Arc<RecipeAccess>,
 }
 impl SearchIndexer {
-    fn new(search_config: SearchConfig, recipe_access: Data<RecipeAccess>) -> Self {
+    fn new(search_config: SearchConfig, recipe_access: Arc<RecipeAccess>) -> Self {
         let url = search_config.http_url();
         info!("Search URL: {url}");
         let search_client = Client::new(url, search_config.api_key);
@@ -83,7 +82,7 @@ impl CanIndex {
 
 pub async fn index_loop(
     search_config: SearchConfig,
-    recipe_access: Data<RecipeAccess>,
+    recipe_access: Arc<RecipeAccess>,
 ) -> Result<()> {
     println!("Starting background job");
     let indexer = SearchIndexer::new(search_config, recipe_access);

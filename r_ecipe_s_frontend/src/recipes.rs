@@ -1,5 +1,5 @@
 use crate::form_component::*;
-use crate::util::{background, markdown_to_html};
+use crate::util::{background, markdown_to_html, recover_default_and_log_err, FrontErr};
 use r_ecipe_s_model::{Recipe, RecipeWithId, RecipesResponse};
 use r_ecipe_s_style::generated::*;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use sycamore::prelude::*;
 use sycamore::rt::{JsCast, JsValue};
 use sycamore::suspense::Suspense;
 use tailwindcss_to_rust_macros::*;
-use web_sys::{Event, HtmlInputElement, HtmlTextAreaElement};
+use web_sys::{Event, EventTarget, HtmlInputElement, HtmlTextAreaElement};
 
 use anyhow::Error;
 
@@ -50,14 +50,15 @@ fn tile_background() -> String {
 #[component]
 pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
     let raw_state = scope_ref.create_signal(RecipeAppState {
-        selected: create_rc_signal(None),
+        modal_view: create_rc_signal(None),
         page: create_rc_signal(PageState {
             offset: 0,
             total_pages: 0,
         }),
         recipes: create_rc_signal(vec![]),
+        authentication_status: create_rc_signal(AuthenticationToken("".to_string())),
     });
-    let selected = scope_ref.create_ref(raw_state.get().selected.clone());
+    let modal_view = scope_ref.create_ref(raw_state.get().modal_view.clone());
     let recipes_response = get_recipes_at_offset(0).await.expect("err");
     let total_pages = recipes_response.total_pages;
     let page = PageState {
@@ -72,24 +73,21 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
         .collect::<Vec<_>>();
 
     raw_state.get().recipes.set(recipes_data);
-    let selected_for_event = scope_ref.create_ref(selected.clone());
+    let selected_for_event = scope_ref.create_ref(modal_view.clone());
     let create_recipe = |_| {
         scope_ref.spawn_future(async {
-            let mut vec = raw_state
-                .get()
-                .recipes
-                .get()
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>();
             let empty_recipe = Recipe {
                 description: String::new(),
                 ingredients: vec![],
                 name: String::new(),
                 liked: None,
             };
+            let authentication_signal =
+                scope_ref.create_ref(raw_state.get().authentication_status.clone());
+            let AuthenticationToken(token) = &*authentication_signal.get();
             let body = reqwasm::http::Request::put("/api/v1/recipes")
                 .header("Content-Type", "application/json")
+                .header("Authorization", &format!("Bearer {token}"))
                 .body(JsValue::from_str(
                     &serde_json::to_string(&empty_recipe).expect("failed to encode recipe as json"),
                 ))
@@ -99,82 +97,110 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
                 .text()
                 .await
                 .expect("failed to get text from response body");
-            let id = serde_json::from_str::<i64>(&body)
+            let _id = serde_json::from_str::<i64>(&body)
                 .expect("failed to decode id and recipe from json");
 
-            let new = create_rc_signal(
-                RecipeWithId {
-                    id,
-                    data: empty_recipe,
-                }
-                .signal(),
-            );
+            let RecipesResponse {
+                recipes,
+                total_pages,
+            } = get_recipes_at_offset(0)
+                .await
+                .expect("Failed to get recipes");
+            raw_state.get().page.set(PageState {
+                offset: 0,
+                total_pages,
+            });
+            let recipes = recipes
+                .into_iter()
+                .map(|recipe| create_rc_signal(recipe.signal()))
+                .collect::<Vec<_>>();
+            let new = recipes
+                .get(0)
+                .expect("Shouldn't have empty first recipe")
+                .clone();
+            raw_state.get().recipes.set(recipes);
 
-            vec.push(new.clone());
-            raw_state.get().recipes.set(vec);
-
-            let new_state = Some(SelectedState {
+            let new_state = Some(ModalView::Recipe(SelectedState {
                 recipe: new,
                 editing: true,
-            });
+            }));
             selected_for_event.set(new_state);
         })
     };
 
     let recipes = scope_ref.create_ref(raw_state.get().recipes.clone());
     view! { scope_ref,
-        div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
-        div(class = DC![
-            C.spc.p_6,
-            M![M.two_xl, C.siz.w_1_of_2],
-            M![M.xl, C.siz.w_1_of_2],
-            M![M.lg, C.siz.w_full],
-            M![M.md, C.siz.w_full],
-            M![M.sm, C.siz.w_full],
-        ]) {
+        div(class = DC![C.siz.h_fit, C.siz.min_h_screen]) {
+            div(class = DC![C.lay.flex]) {
+                div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
+                div(class = DC![C.fg.flex_auto])
+                ({
+                    let modal_view = raw_state.get().modal_view.clone();
+                    let authentication_signal = raw_state.get().authentication_status.clone();
+                    let authenticate = move |_| {
+                        modal_view.set(Some(ModalView::Authenticate(authentication_signal.clone())));
+                    };
+                    view! {scope_ref,
+                        div(
+                            class = DC![C.siz.w_8, C.siz.h_8, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.mr_6],
+                            style = background("lock.svg"),
+                            on:click = authenticate
+                        ) {}
+                    }
+                })
+            }
             div(class = DC![
-                C.lay.flex, C.fg.content_center, C.spc.p_5, C.bg.bg_amber_50, C.bor.rounded_lg,
-                C.fil.drop_shadow_xl
+                C.spc.p_6,
+                M![M.two_xl, C.siz.w_1_of_2],
+                M![M.xl, C.siz.w_1_of_2],
+                M![M.lg, C.siz.w_full],
+                M![M.md, C.siz.w_full],
+                M![M.sm, C.siz.w_full],
             ]) {
-                div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {"RecipeS"}
-                Suspense {
-                    fallback: view! {scope_ref, ""},
-                    LeftButton(raw_state)
-                }
-                PagePosition(raw_state)
-                Suspense {
-                    fallback: view! {scope_ref, ""},
-                    RightButton(raw_state)
+                div(class = DC![
+                    C.lay.flex, C.fg.content_center, C.spc.p_5, C.bg.bg_amber_50, C.bor.rounded_lg,
+                    C.fil.drop_shadow_xl
+                ]) {
+                    div(class = DC![C.fg.flex_auto, C.typ.text_2xl]) {"RecipeS"}
+                    Suspense {
+                        fallback: view! {scope_ref, ""},
+                        LeftButton(raw_state)
+                    }
+                    PagePosition(raw_state)
+                    Suspense {
+                        fallback: view! {scope_ref, ""},
+                        RightButton(raw_state)
+                    }
                 }
             }
-        }
+            Modal((modal_view, scope_ref.create_ref(raw_state.get().authentication_status.clone())))
 
-        Viewer(selected)
-        div(class = DC![
-            C.lay.grid,
-            C.fg.grid_cols_1,
-            C.fg.gap_6,
-            C.spc.p_5,
-            M![M.two_xl, C.fg.grid_cols_3],
-            M![M.xl, C.fg.grid_cols_3],
-            M![M.lg, C.fg.grid_cols_2],
-        ]) {
-            Keyed(KeyedProps {
-                iterable: recipes,
-                view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
-                    RecipeComponent((selected, &recipe))
-                }},
-                key: |recipe| recipe.get().as_ref().id,
-            })
             div(class = DC![
-                C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
-                C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
+                C.lay.grid,
+                C.fg.grid_cols_1,
+                C.fg.gap_6,
+                C.spc.p_5,
+                M![M.two_xl, C.fg.grid_cols_3],
+                M![M.xl, C.fg.grid_cols_3],
+                M![M.lg, C.fg.grid_cols_2],
             ]) {
-                div(
-                    class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6, C.fil.drop_shadow_xl],
-                    on:click = create_recipe,
-                    style = background("plus-circle.svg")
-                )
+                Keyed(KeyedProps {
+                    iterable: recipes,
+                    view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
+                        RecipeComponent((modal_view.clone(), recipe.clone()))
+                    }},
+                    key: |recipe| recipe.get().as_ref().id,
+                })
+                div(class = DC![
+                    C.lay.grid, C.fg.grid_cols_1, C.fg.place_items_center, C.fg.content_center, C.bg.bg_amber_50,
+                    C.bor.rounded_lg, C.fil.drop_shadow_xl, C.siz.w_16, C.siz.h_16
+                ]) {
+                    div(
+                        class = DC![C.bg.bg_no_repeat, C.bg.bg_cover, C.siz.h_6, C.siz.w_6, C.fil.drop_shadow_xl],
+                        on:click = create_recipe,
+                        style = background("plus-circle.svg")
+                    )
+                }
             }
         }
     }
@@ -287,103 +313,144 @@ pub async fn LeftButton<'a, G: Html>(
 }
 
 #[component]
-pub async fn Viewer<'a, G: Html>(
+pub async fn Modal<'a, G: Html>(
     scope_ref: ScopeRef<'a>,
-    selected: &'a Signal<Option<SelectedState>>,
+    modal_view_and_authentication: (
+        &'a Signal<Option<ModalView>>,
+        &'a RcSignal<AuthenticationToken>,
+    ),
 ) -> View<G> {
-    let close_recipe = move || {
+    let (modal_view, authentication_signal) = modal_view_and_authentication;
+    let close_modal = move || {
         move |_: Event| {
-            scope_ref.spawn_future(async {
-                let recipe_option: Option<RecipeWithId> =
-                    selected.get().as_ref().as_ref().map(|selected_state| {
-                        DataToSignal::from_signal(selected_state.recipe.get().as_ref())
-                    });
-
-                let recipe =
-                    recipe_option.expect("Failed to get current recipe from viewer. This is a bug");
-                let recipe_id = recipe.id;
-                let resp = reqwasm::http::Request::post(&format!("/api/v1/recipes/{recipe_id}"))
-                    .header("Content-Type", "application/json")
-                    .body(JsValue::from_str(
-                        &serde_json::to_string(&recipe.data)
-                            .expect("failed to encode recipe as json"),
-                    ))
-                    .send()
-                    .await
-                    .expect("failed to get response from POST recipes/{{id}}");
-
-                let body = resp
-                    .text()
-                    .await
-                    .expect("failed to get text from response body");
-                serde_json::from_str::<i64>(&body)
-                    .expect("failed to decode id and recipe from json");
-                selected.set(None);
+            // let modal_view_clone = modal_view.clone();
+            let authentication_signal = authentication_signal.clone();
+            scope_ref.spawn_future(async move {
+                let res = if let Some(view) = modal_view.get().as_ref() {
+                    view.on_close(authentication_signal).await
+                } else {
+                    Ok(())
+                };
+                recover_default_and_log_err("Failed to save recipe: ", res);
+                modal_view.set(None);
             });
         }
     };
+    view! { scope_ref, (modal_view.get().as_ref().clone().map(|modal_view| {
+        view! { scope_ref,
 
-    let edit_recipe = move || {
-        move |_: Event| {
-            let mut selected_state = selected
-                .get()
-                .as_ref()
-                .clone()
-                .expect("We shouldn't be able to edit a recipe if it isn't open");
-            selected_state.editing = true;
-            //let b = [C.lay.fixed, C.lay.block]
-            selected.set(Some(selected_state));
-        }
-    };
-
-    view! {scope_ref, ({
-        let selected_ref = selected.get();
-        match selected_ref.as_ref() {
-            Some(selected_state) => {
-                let recipe = scope_ref.create_ref(selected_state.recipe.clone());
-                let recipe_id = recipe.get().id;
-                let recipe = scope_ref.create_ref(recipe.clone());
-                let editing = scope_ref.create_ref(selected_state.editing);
-                view! { scope_ref,
-                div(
-                    class = DC![
-                        C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.fixed, C.lay.block,
-                        C.fg.place_items_center, C.fg.content_center, C.lay.z_10
-                    ]
-                ) {
+            div(
+                class = DC![
+                    C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.min_h_full, C.siz.h_fit, C.lay.fixed, C.lay.block,
+                    C.fg.place_items_center, C.fg.content_center, C.lay.z_10
+                ]
+            ) {
                     div(
                         class = DC![
-                            &tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_5,
-                            M![M.sm, C.spc.m_10],
-                            M![M.md, C.spc.m_10]
+                            C.lay.absolute, C.lay.top_0, C.lay.right_0, C.siz.h_6, C.siz.w_6, C.bg.bg_cover,
+                            C.bg.bg_no_repeat, C.spc.m_12, C.lay.z_30
                         ],
-                        id = format!("recipe-{:?}", recipe_id),
-                        on:dblclick = edit_recipe()
-                    ) {
-                        div(
-                            class = DC![
-                                C.lay.absolute, C.lay.top_0, C.lay.right_0, C.siz.h_6, C.siz.w_6, C.bg.bg_cover,
-                                C.bg.bg_no_repeat, C.spc.m_3
-                            ],
-                            on:click=close_recipe(),
-                            style = background("x-circle.svg")
-                        ) {}
-                        (if *editing {
-                            view! {scope_ref, RecipeDataFormComponent(recipe) }
-                        } else {
-                            view! {scope_ref, RecipeDataComponent(recipe)}
-                        })
+                        on:click=close_modal(),
+                        style = background("x-circle.svg")
+                    ) {}
+                (
+                    match modal_view.clone() {
+                        ModalView::Recipe(selected_state) => {
+                            let reff = scope_ref.create_signal(selected_state);
+                            view! {scope_ref, RecipeModal(reff)}
+                        }
+                        ModalView::Authenticate(authentication_signal) => view! { scope_ref, AuthenticationModal(authentication_signal.clone())}
                     }
-                    div(class = DC![C.lay.absolute, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_10], on:click=close_recipe()) { br }
-                }
-                }
-            }
-            None => {
-                view! { scope_ref, "" }
+                )
+                div(class = DC![C.lay.absolute, C.lay.fixed, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_10], on:click = close_modal()) { br }
             }
         }
-    })
-    }
+    }).unwrap_or_else(|| view! { scope_ref, "" }))}
+}
+
+#[component]
+pub async fn RecipeModal<'a, G: Html>(
+    scope_ref: ScopeRef<'a>,
+    selected_state_signal: &'a Signal<SelectedState>,
+) -> View<G> {
+    view! { scope_ref, ( {
+        let recipe = scope_ref.create_ref(selected_state_signal.get().recipe.clone());
+        let recipe = scope_ref.create_ref(recipe.clone());
+        let editing = scope_ref.create_ref(selected_state_signal.get().editing);
+        let edit_recipe = move || {
+            move |_: Event| {
+                let mut selected_state = selected_state_signal.get().as_ref().clone();
+                selected_state.editing = true;
+                selected_state_signal.set(selected_state);
+            }
+        };
+        view! { scope_ref,
+            div(
+                class = DC![
+                    &tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_5,
+                    M![M.sm, C.spc.m_10],
+                    M![M.md, C.spc.m_10]
+                ],
+                // id = format!("recipe-{:?}", recipe_id),
+                on:dblclick = edit_recipe(),
+            ) {
+                (if *editing {
+                    view! {scope_ref, RecipeDataFormComponent(recipe) }
+                } else {
+                    view! {scope_ref, RecipeDataComponent(recipe)}
+                })
+            }
+        }
+    })}
+}
+
+#[component]
+pub async fn AuthenticationModal<'a, G: Html>(
+    scope_ref: ScopeRef<'a>,
+    authentication_signal: RcSignal<AuthenticationToken>,
+) -> View<G> {
+    let authentication_signal = scope_ref.create_ref(authentication_signal);
+    view! { scope_ref, ( {
+        let set_token = move |event: Event| -> std::result::Result<(), FrontErr> {
+            let input_value: Option<EventTarget> = event.target();
+            let input_value = input_value
+                .ok_or_else(|| {
+                    FrontErr::Message("Failed to get even target for token change event".into())
+                })?
+                .dyn_into::<HtmlInputElement>()
+                .map_err(|err| {
+                    FrontErr::Message(format!(
+                        "Failed to convert token change event target to input element: {err:?}"
+                    ))
+                })?
+                .value();
+            authentication_signal.set(AuthenticationToken(input_value));
+            Ok(())
+        };
+        let set_token = move |event: Event| {
+            recover_default_and_log_err("failed to set authentication token", set_token(event))
+        };
+        view! { scope_ref,
+            div(
+                class = DC![
+                    &tile_background(), C.lay.relative, C.lay.z_20, C.spc.m_5,
+                    M![M.sm, C.spc.m_10],
+                    M![M.md, C.spc.m_10]
+                ],
+            ) {
+                div(class = DC![C.spc.p_3]) {
+                    div(class = DC![C.spc.m_3]) {"API Key"}
+                    input(
+                        type="text",
+                        class = DC![C.spc.p_1, C.siz.w_4_of_5, C.spc.m_3],
+                        name="spec",
+                        on:change = set_token,
+                        value = authentication_signal.clone().get().0
+                    ) {}
+                }
+            }
+        }
+    })}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -493,36 +560,34 @@ pub fn RecipeDataComponent<G: Html>(
 #[component]
 pub fn RecipeComponent<G: Html>(
     scope_ref: ScopeRef,
-    (selected_signal, recipe): (&RcSignal<Option<SelectedState>>, &RcSignal<RecipeSignal>),
+    (modal_view, recipe): (RcSignal<Option<ModalView>>, RcSignal<RecipeSignal>),
 ) -> View<G> {
     let recipe_id = recipe.get().id;
-    let recipe = scope_ref.create_ref(recipe.clone());
-    let selected_signal = scope_ref.create_ref(selected_signal.clone());
+    let recipe = scope_ref.create_ref(recipe);
 
     view! { scope_ref,
-    div(
-        on:click = move |_: Event| {
-            web_sys::console::log_1(&format!("{:?}  Help", selected_signal.get().as_ref()).into());
-            let new_signal = Some(
-                SelectedState {
-                    recipe: recipe.clone(),
-                    editing: false
-                }
-                );
-            selected_signal.set(new_signal);
-        }
-       ) {
         div(
-            class = DC![&tile_background(), C.siz.max_h_80, C.typ.truncate, C.lay.relative],
-            id = format!("recipe-{:?}", recipe_id)
+            on:click = move |_: Event| {
+                let new_signal = Some(
+                    ModalView::Recipe(SelectedState {
+                        recipe: recipe.clone(),
+                        editing: false
+                    }
+                    ));
+                modal_view.set(new_signal);
+            }
            ) {
-            RecipeDataComponent(recipe)
-            div(class = DC![
-                C.lay.absolute, C.siz.h_2_of_3, C.siz.w_full, C.lay.bottom_0, C.bor.rounded_t_lg, C.bg.bg_gradient_to_t,
-                C.bg.from_amber_50
-            ])
+            div(
+                class = DC![&tile_background(), C.siz.max_h_80, C.typ.truncate, C.lay.relative],
+                id = format!("recipe-{:?}", recipe_id)
+               ) {
+                RecipeDataComponent(recipe)
+                div(class = DC![
+                    C.lay.absolute, C.siz.h_2_of_3, C.siz.w_full, C.lay.bottom_0, C.bor.rounded_t_lg, C.bg.bg_gradient_to_t,
+                    C.bg.from_amber_50
+                ])
+            }
         }
-    }
     }
 }
 
@@ -537,18 +602,68 @@ impl<T: Sized> IntoOk for T {
         Ok(self)
     }
 }
+#[derive(Debug, Clone)]
+pub struct AuthenticationToken(pub String);
+
+#[derive(Debug, Clone)]
+pub enum ModalView {
+    Recipe(SelectedState),
+    Authenticate(RcSignal<AuthenticationToken>),
+}
+
+impl ModalView {
+    pub async fn on_close(
+        &self,
+        authentication_signal: RcSignal<AuthenticationToken>,
+    ) -> Result<()> {
+        match self {
+            Self::Recipe(selected_state) => {
+                selected_state
+                    .save(authentication_signal.get().as_ref())
+                    .await
+            }
+            Self::Authenticate(_) => Ok(()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RecipeAppState {
-    pub selected: RcSignal<Option<SelectedState>>,
+    pub modal_view: RcSignal<Option<ModalView>>,
     pub page: RcSignal<PageState>,
     pub recipes: RcSignal<Vec<RcSignal<RecipeSignal>>>,
+    pub authentication_status: RcSignal<AuthenticationToken>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectedState {
     pub recipe: RcSignal<RecipeSignal>,
     pub editing: bool,
+}
+
+impl SelectedState {
+    pub async fn save(&self, AuthenticationToken(token): &AuthenticationToken) -> Result<()> {
+        let recipe = self.recipe.get();
+        //.expect("Failed to get current recipe from viewer. This is a bug");
+        let recipe_id = recipe.id;
+        let resp = reqwasm::http::Request::post(&format!("/api/v1/recipes/{recipe_id}"))
+            .header("Content-Type", "application/json")
+            .header("Authorization", &format!("Bearer {token}"))
+            .body(JsValue::from_str(&serde_json::to_string(
+                &RecipeWithId::from_signal(&self.recipe.get().as_ref()).data,
+            )?))
+            .send()
+            // .expect("failed to get response from POST recipes/:id")
+            .await?;
+        // .expect("failed to get response from POST recipes/:id}");
+
+        let body = resp.text().await?;
+        //expect("failed to get text from response body");
+        serde_json::from_str::<i64>(&body)?;
+        //.expect("failed to decode id and recipe from json");
+        let e: Result<()> = Ok(());
+        e
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

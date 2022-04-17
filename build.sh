@@ -1,5 +1,5 @@
 cd server
-export  CC=x86_64-unknown-linux-gnu-gcc
+export  TARGET_CC=x86_64-unknown-linux-gnu-gcc
 cargo build --release --target=x86_64-unknown-linux-gnu
 cd ../frontend
 trunk build --release

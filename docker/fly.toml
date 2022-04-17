@@ -10,7 +10,7 @@ processes = []
   R_ECIPE_S_SERVER_HOST = "0.0.0.0"
   R_ECIPE_S_SEARCH_HOST = "r-ecipe-s-search.internal"
   R_ECIPE_S_SEARCH_PORT = "7700"
-  RUST_LOG = "INFO"
+  RUST_LOG = "info,tower_http=debug,sqlx=warn"
 
 [experimental]
   allowed_public_ports = []

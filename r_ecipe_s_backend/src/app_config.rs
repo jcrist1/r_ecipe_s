@@ -2,8 +2,8 @@ use config::{Config, ConfigError, File};
 
 use serde::{Deserialize, Serialize};
 
-use log::info;
 use thiserror::Error as ThisError;
+use tracing::log::info;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
