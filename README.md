@@ -46,3 +46,18 @@ tailwindcss-to-rust --input frontend/css/tailwind.css --tailwind-config frontend
 Then you need to make everything `pub` in the generated file instead of `pub(crate)`. 
 Now tailwind can scan a specific dependency without scanning the whole generated rust file
 
+## Deploying on fly.io
+From the docker directory run to create the app
+```sh
+flyctl launch
+```
+It may ask something about using the existing config IIRC.
+
+You will need a postgres deployment, a meilisearch deployment and secrets for the credentials for these:
+```sh
+flyctl secrets create API_KEY={API_KEY} R_ECIPE_S_DB_PASSWORD={DB_PASSWORD} R_ECIPE_S_SEARCH_API_KEY={MEILIESEARCH_KEY}
+```
+Then run to the following propagate the new env variables
+```sh
+flyctl deploy
+```
