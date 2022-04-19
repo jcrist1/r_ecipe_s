@@ -24,7 +24,7 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-const R_ECIPE_S_INDEX_NAME: &str = "r_ecipe_s";
+pub(crate) const R_ECIPE_S_INDEX_NAME: &str = "r_ecipe_s";
 
 struct SearchIndexer {
     search_client: Client,

@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 serde = "1.0.133"
+serde_json = "1.0"
 meilisearch-sdk = { path = "../../meilisearch-rust" }
