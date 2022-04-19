@@ -1,6 +1,8 @@
 use crate::{
+    app_config::SearchConfig,
     auth::{AuthError, BearerToken, BearerValidation},
     db::DBAccess,
+    search_indexer::R_ECIPE_S_INDEX_NAME,
 };
 use axum::{
     body::HttpBody,
@@ -11,12 +13,17 @@ use axum::{
     Json as HttpJson, Router,
 };
 use futures_util::{StreamExt, TryStreamExt};
-use r_ecipe_s_model::{Ingredient, Recipe, RecipeWithId, RecipesResponse};
+use r_ecipe_s_model::{
+    serde_json, Ingredient, Recipe, RecipeWithId, RecipesResponse, SearchQuery, SearchResponse,
+    SearchResult,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::types::time::OffsetDateTime;
 use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, Transaction};
 use tracing::log::error;
+
+use meilisearch_sdk::client::Client;
 
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -38,6 +45,8 @@ pub enum Error {
     IncorrectPageSize(i64),
     #[error("Error with authentication: {0}")]
     Auth(#[from] AuthError),
+    #[error("Search error: {0}")]
+    Search(#[from] meilisearch_sdk::errors::Error),
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -55,6 +64,7 @@ impl IntoResponse for Error {
             Error::Missing { .. } => http::StatusCode::NOT_FOUND,
             Error::IncorrectPageSize(_) => http::StatusCode::BAD_REQUEST,
             Error::Auth(_) => http::StatusCode::BAD_REQUEST,
+            Error::Search(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (error_code, format!("{self:?}")).into_response()
     }
@@ -65,6 +75,7 @@ pub trait RecipeService {
     fn bind_recipe_routes(
         self,
         recipe_access: &Arc<RecipeAccess>,
+        search_config: &SearchConfig,
         bearer_validation: &Arc<BearerValidation>,
     ) -> Self::ServiceType;
 }
@@ -79,8 +90,11 @@ where
     fn bind_recipe_routes(
         self,
         recipe_access: &Arc<RecipeAccess>,
+        search_config: &SearchConfig,
         bearer_validation: &Arc<BearerValidation>,
     ) -> Self::ServiceType {
+        let url = search_config.http_url();
+        let search_client = Arc::new(Client::new(url, search_config.api_key.clone()));
         self.route(
             "/recipes",
             get({
@@ -113,10 +127,15 @@ where
                 |path| get_recipe(path, recipe_access)
             }),
         )
+        .route(
+            "/recipes/search",
+            get({
+                let search_client = search_client.clone();
+                |search_query| search_recipe(search_client, search_query)
+            }),
+        )
     }
 }
-//    }
-//}
 
 pub struct RecipeAccess {
     db_access: Arc<DBAccess>,
@@ -428,4 +447,21 @@ pub(crate) async fn post_recipe(
         })?;
 
     Ok(recipe.into())
+}
+
+pub(crate) async fn search_recipe(
+    search_client: Arc<Client>,
+    search_query: Query<SearchQuery>,
+) -> Result<HttpJson<SearchResponse>> {
+    let index = search_client.index(R_ECIPE_S_INDEX_NAME);
+    let mut query = index.search();
+    let results = query
+        .with_query(&search_query.query)
+        .execute::<RecipeWithId>()
+        .await?
+        .hits
+        .into_iter()
+        .map(|hit| SearchResult { recipe: hit.result })
+        .collect();
+    Ok((SearchResponse { results }).into())
 }

@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json, TypedHeader,
 };
+use r_ecipe_s_model::serde_json;
 use serde::{Deserialize, Serialize};
 use thiserror::Error as ThisError;
 

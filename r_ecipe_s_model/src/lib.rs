@@ -1,5 +1,6 @@
 use meilisearch_sdk::document::Document;
 use serde::{Deserialize, Serialize};
+pub use serde_json;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Recipe {
     pub name: String,
@@ -45,4 +46,20 @@ impl Document for RecipeWithId {
     fn get_uid(&self) -> &i64 {
         &self.id
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchQuery {
+    pub query: String,
+    // todo: limit + offset
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResponse {
+    pub results: Vec<SearchResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub recipe: RecipeWithId,
 }

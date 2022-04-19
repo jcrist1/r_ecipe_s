@@ -85,7 +85,7 @@ fn QuantityFormComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quant
     view! { scope_ref,
         select(
             class = DC![C.spc.p_1, C.siz.w_20],
-            on:change = selected_handler
+            on:input = selected_handler
         ) {
             option(
                 value = COUNT,
@@ -104,7 +104,7 @@ fn QuantityFormComponent<G: Html>(scope_ref: ScopeRef, quantity: &RcSignal<Quant
             type="text",
             class = DC![C.spc.p_1, C.siz.w_14],
             name="spec",
-            on:change = quantity_handler,
+            on:input = quantity_handler,
             value = get_quantity(quantity.get().as_ref())
         ) {}
     }
@@ -209,7 +209,7 @@ pub fn IngredientFormComponent<G: Html>(
                 type = "text",
                 class = DC![C.spc.p_1, C.siz.w_48],
                 name = "name",
-                on:change = name_handler,
+                on:input = name_handler,
                 value = (name.get().to_string())
             )
     }
@@ -273,7 +273,7 @@ pub fn IngredientsFormComponent<G: Html>(
                         ingredients_clone.set(new);
                     };
                 view! { ctx,
-                    div(class = DC![C.lay.flex,C.fg.gap_1, C.spc.p_2, C.siz.h_14]) {
+                    div(class = DC![C.lay.flex, C.fg.flex_wrap, C.fg.gap_1, C.spc.p_2, C.siz.min_h_fit, C.siz.h_14]) {
                         IngredientFormComponent(&data)
                         div(class = DC![C.spc.pt_2]) {
                             div(

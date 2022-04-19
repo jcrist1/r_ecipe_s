@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .nest(
             "/api/v1",
-            Router::new().bind_recipe_routes(&recipe_access, &bearer_validation),
+            Router::new().bind_recipe_routes(&recipe_access, &search_config, &bearer_validation),
         )
         .nest(
             "/static",
