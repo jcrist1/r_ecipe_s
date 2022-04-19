@@ -418,7 +418,7 @@ pub async fn RecipeModal<'a, G: Html>(
             div(class = DC![C.spc.pb_5, C.siz.max_h_screen]) {
                 div(
                     class = DC![
-                        &tile_background(), C.lay.relative, C.lay.z_30, C.spc.m_1, C.spc.pb_5, C.siz.max_h_full
+                        &tile_background(), C.lay.relative, C.lay.z_30, C.spc.m_1, C.spc.pb_5, C.siz.max_h_screen
                     ],
                     // id = format!("recipe-{:?}", recipe_id),
                     on:dblclick = edit_recipe(),
@@ -565,7 +565,8 @@ fn RecipeDataFormComponent<G: Html>(
         input(class = DC![C.spc.p_1], type="text", value=name.get(), on:input = set_name)
     }
     div(
-        class = DC![C.spc.p_6, C.siz.max_h_screen, C.lay.overflow_scroll]
+        class = DC![C.spc.p_6, C.lay.overflow_scroll],
+        style = "max-height: 90vh"
     ) {
         p(class = DC![C.typ.text_xl, C.typ.text_gray_600])  {"Ingredients"}
         IngredientsFormComponent(ingredients)
@@ -588,7 +589,7 @@ pub fn RecipeDataComponent<G: Html>(
         div(class = header()) {
             p {(format!("{}", name.get()))}
         }
-        div(class = DC![C.spc.p_3, C.spc.mb_5, C.siz.max_h_screen, C.lay.overflow_scroll]) {
+        div(class = DC![C.spc.p_3, C.spc.mb_5, C.lay.overflow_scroll], style = "max-height: 90vh") {
             RecipeBody(recipe)
         }
     }
@@ -604,7 +605,7 @@ pub fn RecipeBody<G: Html>(scope_ref: ScopeRef, recipe: &RcSignal<RecipeSignal>)
             IngredientsComponent(ingredients)
         }
         p(class = DC![C.typ.text_xl, C.typ.text_gray_600]) {"Directions"}
-        div(class = DC![C.pro.prose, C.typ.whitespace_normal,  C.siz.max_h_full, C.siz.max_w_full, C.spc.p_3, C.spc.mb_5], dangerously_set_inner_html = &markdown_to_html(&description.get()))
+        div(class = DC![C.pro.prose, C.typ.whitespace_normal, C.siz.max_w_full, C.spc.p_3, C.spc.mb_5], dangerously_set_inner_html = &markdown_to_html(&description.get()))
     }
 }
 

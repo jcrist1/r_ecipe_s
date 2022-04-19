@@ -1197,10 +1197,6 @@ select {
   max-height: 100vh;
 }
 
-.max-h-full {
-  max-height: 100%;
-}
-
 .max-h-80 {
   max-height: 20rem;
 }
