@@ -124,6 +124,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
             let new_state = Some(ModalView::Recipe(SelectedState {
                 recipe: new,
                 editing: true,
+                changed: create_rc_signal(false),
             }));
             selected_for_event.set(new_state);
         })
@@ -131,7 +132,7 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
 
     let recipes = scope_ref.create_ref(raw_state.get().recipes.clone());
     view! { scope_ref,
-        div(class = DC![C.siz.h_fit, C.siz.min_h_screen]) {
+        div(class = DC![C.siz.h_fit, C.siz.min_h_screen, C.siz.w_screen]) {
             div(class = DC![C.lay.flex]) {
                 div(class = DC![C.siz.w_32, C.siz.h_24, C.bg.bg_contain, C.bg.bg_no_repeat, C.spc.mt_6, C.spc.ml_6], style = background("ferris-chef.svg"))
                 div(class = DC![C.fg.flex_auto])
@@ -367,9 +368,9 @@ pub async fn Modal<'a, G: Html>(
                    C.lay.z_30
                 ]
             ) {
-                div(class = DC![C.lay.flex, C.fg.place_items_center, C.siz.w_full]) {
-                    div(class = DC![C.fg.flex_auto, C.siz.min_w_0])
-                    div(class = DC![C.lay.relative, C.siz.max_w_screen_md, C.siz.w_auto, C.siz.max_h_screen, C.siz.h_auto, C.fg.flex_auto ]) {
+                div(class = DC![C.lay.flex, C.fg.place_items_center, C.siz.w_full, C.siz.max_w_full]) {
+                    div(class = DC![C.fg.flex_auto, C.fg.basis_0])
+                    div(class = DC![C.lay.relative, C.siz.max_w_screen_md, C.fg.basis_5_of_6, C.siz.max_h_screen, C.siz.h_auto, C.fg.flex_auto ]) {
                         div(
                             class = DC![
                                 C.lay.absolute, C.lay.top_3, C.lay.right_3, C.siz.h_6, C.siz.w_6, C.bg.bg_cover,
@@ -388,7 +389,7 @@ pub async fn Modal<'a, G: Html>(
                             }
                         )
                     }
-                    div(class = DC![C.fg.flex_auto, C.siz.min_w_0])
+                    div(class = DC![C.fg.flex_auto, C.fg.basis_0])
                 }
                 div(class = DC![C.lay.absolute, C.lay.fixed, C.lay.top_0, C.siz.w_full, C.siz.h_full, C.lay.z_20], on:click = close_modal()) { br }
             }
@@ -409,6 +410,7 @@ pub async fn RecipeModal<'a, G: Html>(
             move |_: Event| {
                 let mut selected_state = selected_state_signal.get().as_ref().clone();
                 selected_state.editing = true;
+                selected_state.changed.set(true);
                 selected_state_signal.set(selected_state);
             }
         };
@@ -621,7 +623,8 @@ pub fn RecipeComponent<G: Html>(
                 let new_signal = Some(
                     ModalView::Recipe(SelectedState {
                         recipe: recipe.clone(),
-                        editing: false
+                        editing: false,
+                        changed: create_rc_signal(false)
                     }
                     ));
                 modal_view.set(new_signal);
@@ -695,6 +698,7 @@ pub struct RecipeAppState {
 pub struct SelectedState {
     pub recipe: RcSignal<RecipeSignal>,
     pub editing: bool,
+    pub changed: RcSignal<bool>,
 }
 
 impl SelectedState {
@@ -702,7 +706,7 @@ impl SelectedState {
         let recipe = self.recipe.get();
         //.expect("Failed to get current recipe from viewer. This is a bug");
         let recipe_id = recipe.id;
-        if self.editing {
+        if *self.changed.get() {
             let resp = reqwasm::http::Request::post(&format!("/api/v1/recipes/{recipe_id}"))
                 .header("Content-Type", "application/json")
                 .header("Authorization", &format!("Bearer {token}"))
@@ -716,7 +720,9 @@ impl SelectedState {
 
             let body = resp.text().await?;
             serde_json::from_str::<i64>(&body)?;
+            self.changed.set(false);
         }
+
         let e: Result<()> = Ok(());
         e
     }

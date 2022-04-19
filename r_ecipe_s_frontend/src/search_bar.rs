@@ -100,6 +100,7 @@ pub fn SearchBar<'a, G: Html>(
                                 modal_view.set(Some(ModalView::Recipe(SelectedState {
                                     recipe: create_rc_signal(recipe.signal()),
                                     editing: false,
+                                    changed: create_rc_signal(false),
                                 })));
                             }
                         ) {

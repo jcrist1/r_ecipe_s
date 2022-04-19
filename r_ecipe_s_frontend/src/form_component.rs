@@ -273,7 +273,7 @@ pub fn IngredientsFormComponent<G: Html>(
                         ingredients_clone.set(new);
                     };
                 view! { ctx,
-                    div(class = DC![C.lay.flex, C.fg.flex_wrap, C.fg.gap_1, C.spc.p_2, C.siz.min_h_fit, C.siz.h_14]) {
+                    div(class = DC![C.lay.flex, C.fg.flex_wrap, C.fg.gap_1, C.spc.p_2, C.siz.h_fit]) {
                         IngredientFormComponent(&data)
                         div(class = DC![C.spc.pt_2]) {
                             div(
