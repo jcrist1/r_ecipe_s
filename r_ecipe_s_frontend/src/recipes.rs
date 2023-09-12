@@ -195,9 +195,9 @@ pub async fn RecipesPage<G: Html>(scope_ref: ScopeRef<'_>) -> View<G> {
             ]) {
                 Keyed(KeyedProps {
                     iterable: recipes,
-                    view:  move  |ctx, recipe| {view! {ctx, // todo make context per recipe?
-                        RecipeComponent((modal_view.clone(), recipe.clone()))
-                    }},
+                    view:  move  |ctx, recipe| {
+                        view! { ctx, RecipeComponent((modal_view.clone(), recipe.clone())) }
+                    },
                     key: |recipe| recipe.get().as_ref().id,
                 })
                 div(class = DC![
@@ -552,6 +552,7 @@ fn RecipeDataFormComponent<G: Html>(
         name.set(input_value);
     };
     let set_description = move |event: Event| {
+        let b: EventTarget = event.target().unwrap();
         let input_value = event
             .target()
             .expect("Failed to get even target for name change event")
