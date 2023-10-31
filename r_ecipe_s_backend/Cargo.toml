@@ -7,7 +7,7 @@ edition = "2021"
 
 
 [dependencies]
-sqlx = { version = "0.5", features = [ "migrate", "runtime-tokio-rustls", "postgres", "json",
+sqlx = { version = "0.6", features = [ "migrate", "runtime-tokio-rustls", "postgres", "json",
 "time"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.30"
@@ -18,7 +18,7 @@ futures = "0.3"
 futures-util = "0.3.19"
 r_ecipe_s_model = { path = "../r_ecipe_s_model/"}
 time = "0.3"
-meilisearch-sdk = { path = "../../meilisearch-rust" }
+meilisearch-sdk = "0.24"
 axum = {version = "0.5", features = ["headers"]}
 tower-service = "0.3"
 async-trait = "0.1.53"
@@ -26,3 +26,6 @@ tracing = "0.1"
 axum-auth = "0.1"
 jsonwebtoken = "8.0.1"
 axum-extra = "0.2"
+qdrant-client = "1.6.0"
+anyhow = "1.0.75"
+itertools = "0.11.0"

@@ -41,6 +41,12 @@ impl SearchConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VectorSearchConfig {
+    pub host: String,
+    pub port: u16,
+}
+
 impl HTTPConfig {
     pub fn connection_string(&self) -> String {
         format!("{}:{}", self.host, self.port)
@@ -52,6 +58,7 @@ pub struct AppConfig {
     pub http_config: HTTPConfig,
     pub db_config: DBConfig,
     pub search_config: SearchConfig,
+    pub vector_search_config: VectorSearchConfig,
 }
 
 impl AppConfig {
@@ -97,10 +104,13 @@ impl AppConfig {
             })?;
         }
 
+        let vector_search_config = conf.get::<VectorSearchConfig>("vector_search")?;
+
         Ok(AppConfig {
             http_config,
             db_config,
             search_config,
+            vector_search_config,
         })
     }
 }

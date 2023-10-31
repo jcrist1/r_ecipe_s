@@ -1,3 +1,6 @@
+[serve]
+# The address to serve on.
+address = "192.168.1.174"
 [[hooks]]
 stage = "build"
 # I'm not sure why we can't just invoke tailwindcss directly, but that doesn't
@@ -5,6 +8,6 @@ stage = "build"
 command = "sh"
 command_arguments = [
     "-c",
-    "tailwindcss -i css/tailwind.css -o static/tailwind_compiled.css"
+    "npx tailwindcss -i css/tailwind.css -o static/tailwind_compiled.css"
 ]
 

@@ -8,9 +8,8 @@ use axum::{
 };
 use r_ecipe_s_model::serde_json;
 use serde::{Deserialize, Serialize};
-use thiserror::Error as ThisError;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 pub enum AuthError {
     #[error("Incorrect credentials")]
     WrongCredentials,

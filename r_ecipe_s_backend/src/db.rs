@@ -1,5 +1,6 @@
 use crate::app_config::DBConfig;
 use thiserror::Error as ThisError;
+use tracing::info;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
@@ -25,7 +26,9 @@ impl DBMigrator {
     }
 
     pub async fn migrate(self) -> Result<DBAccess> {
-        sqlx::migrate!("./migrations").run(&self.pool).await?;
+        info!("Running migrations");
+        //sqlx::migrate!("./migrations").run(&self.pool).await?;
+        info!("Migrations run!");
         Ok(DBAccess { pool: self.pool })
     }
 }

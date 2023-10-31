@@ -1,10 +1,10 @@
 [workspace]
+resolver = "2"
 members = [
     "r_ecipe_s_backend",
     "r_ecipe_s_frontend",
     "r_ecipe_s_model",
-    "r_ecipe_s_style",
     "server",
-    "frontend",
+    "frontend_ls",
 ]
 

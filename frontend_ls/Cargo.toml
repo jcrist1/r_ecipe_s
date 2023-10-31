@@ -1,0 +1,23 @@
+[package]
+name = "frontend_ls"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0.133", features = ["derive"] }
+r_ecipe_s_frontend = { path = "../r_ecipe_s_frontend" }
+r_ecipe_s_model = { path = "../r_ecipe_s_model" }
+leptos = { version = "0.5", features = ["csr"] }
+console_log = { version = "1.0.0", features = ["color"] }
+log = "0.4.20"
+console_error_panic_hook = "0.1.7"
+thiserror = "1.0.48"
+futures-timer = { version = "3.0.2", features = ["wasm-bindgen"] }
+iter_tools = "0.1.4"
+minilm = { path = "../../minilm/minilm" }
+gloo-worker = { version = "0.4.1", features = ["futures"] }
+futures = "0.3.29"
+leptos-use = { version = "0.8.1", features = ["serde", "storage"] }
+either = "1.9.0"
