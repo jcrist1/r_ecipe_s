@@ -3,10 +3,13 @@ use axum::http::StatusCode;
 use axum::Router;
 use futures::executor::block_on;
 use futures::future::abortable;
+use futures::FutureExt;
 use log::info;
+use qdrant_client::prelude::{QdrantClient, QdrantClientConfig};
 use r_ecipe_s_backend::auth::BearerValidation;
 use std::net::{AddrParseError, SocketAddr};
 use std::sync::Arc;
+use tracing::warn;
 
 use axum::routing::get_service;
 use axum::Extension;
@@ -39,6 +42,14 @@ enum Error {
     AddrParse(#[from] AddrParseError),
     #[error("{0}")]
     Message(String),
+    #[error("Error in vector DB: {0}")]
+    Qdrant(String),
+}
+
+impl Error {
+    fn qdrant(err: anyhow::Error) -> Self {
+        Error::Qdrant(format!("{err}"))
+    }
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -55,9 +66,12 @@ async fn main() -> Result<()> {
         http_config,
         db_config,
         search_config,
+        vector_search_config,
     }: app_config::AppConfig = app_config::AppConfig::load("config/config.toml")?;
+    info!("Running migrations: {db_config:?}");
     let db_access = Arc::new(db::DBMigrator::new(&db_config).await?.migrate().await?);
-    env::set_current_dir("../frontend")?;
+    info!("Migrations successfully run!");
+    env::set_current_dir("../frontend_ls")?;
 
     std::env::set_var("RUST_LOG", "axum=info,sqlx=warn");
     let api_key = std::env::var("API_KEY").expect("API_KEY  environment variable is not set");
@@ -65,11 +79,25 @@ async fn main() -> Result<()> {
     let host_port = http_config.connection_string();
     let recipe_access = Arc::new(RecipeAccess::new(&db_access));
 
+    let vector_client = Arc::new(
+        QdrantClient::new(Some(QdrantClientConfig::from_url(&format!(
+            "http://{host}:{port}",
+            host = vector_search_config.host,
+            port = vector_search_config.port
+        ))))
+        .map_err(Error::qdrant)?,
+    );
+
     let sock_addr = SocketAddr::new(http_config.host.parse()?, http_config.port); //&host_port.parse()?;
     let app = Router::new()
         .nest(
             "/api/v1",
-            Router::new().bind_recipe_routes(&recipe_access, &search_config, &bearer_validation),
+            Router::new().bind_recipe_routes(
+                &recipe_access,
+                &search_config,
+                &vector_client,
+                &bearer_validation,
+            ),
         )
         .nest(
             "/static",
@@ -104,12 +132,20 @@ async fn main() -> Result<()> {
     tracing::info!("Successfully bound server to {}", host_port);
     let http_server = axum::Server::bind(&sock_addr).serve(app.into_make_service());
 
-    let tasks = tokio::spawn(async move {
-        tokio::join!(
-            r_ecipe_s_backend::search_indexer::index_loop(search_config, recipe_access),
-            http_server
+    let indexing = {
+        r_ecipe_s_backend::search_indexer::index_loop(
+            search_config,
+            vector_search_config,
+            recipe_access,
         )
-    });
+        .map(|res| {
+            if let Err(err) = &res {
+                warn!("Error indexing: {err}")
+            }
+            res
+        })
+    };
+    let tasks = tokio::spawn(async move { tokio::join!(indexing, http_server) });
     let (fut, handle) = abortable(tasks);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

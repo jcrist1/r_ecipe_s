@@ -1,0 +1,3 @@
+dist/**
+static/model.safetensors
+static/tailwind_compiled.css 

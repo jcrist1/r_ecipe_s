@@ -17,3 +17,5 @@ tower-http = {version = "0.2", features = ["fs", "trace"]}
 tower = "0.4.12"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 tracing = "0.1"
+qdrant-client = "1.6.0"
+anyhow = "1.0.75"
