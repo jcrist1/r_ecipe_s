@@ -1,6 +1,6 @@
 use either::Either;
 use frontend_ls::{AsyncMutex, EncodeOnDemand, Error};
-use frontend_ls::{EncodeRequest, EncodeResponse};
+use frontend_ls::{EncodeResponse, MiniLmWorkereComm};
 use gloo_worker::reactor::ReactorBridge;
 
 use std::time::Duration;
@@ -33,20 +33,24 @@ type MiniLmWrite = WriteSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand
 async fn get_embedding(minilm: Option<MiniLmRead>, input: String) -> Option<Vec<f32>> {
     let bridge = minilm?.get_untracked()?;
     let mut guard = bridge.lock().await;
-    guard.as_mut().send_input(EncodeRequest(input));
+    guard
+        .as_mut()
+        .send_input(MiniLmWorkereComm::TextInput(input));
     let EncodeResponse(output) = guard.as_mut().next().await?;
     Some(output)
 }
 
-fn spawn_minilm() -> Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>> {
+fn spawn_minilm(host: &str) -> Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>> {
     log!("Starting web worker");
     let bridge = EncodeOnDemand::spawner().spawn("/worker.js");
+    bridge.send_input(MiniLmWorkereComm::ModelPath(host.to_string()));
     Rc::new(AsyncMutex::new(bridge))
 }
 
 #[component]
 fn NavBar(
     offset: i64,
+    origin: ReadSignal<String>,
     set_edit: WriteSignal<EditModal>,
     get_page_action: Action<i64, (i64, Result<RecipesResponse, Error>)>,
     minilm: MiniLmRead,
@@ -55,7 +59,7 @@ fn NavBar(
     api_key: Signal<Option<String>>,
     set_api_key: WriteSignal<Option<String>>,
 ) -> impl IntoView {
-    let spawn_minilm = move || set_minilm.set(Some(spawn_minilm()));
+    let spawn_minilm = move || set_minilm.set(Some(spawn_minilm(&origin.get_untracked())));
 
     let (_, right_disabled): (View, &str) = match get_page_action.value().get_untracked() {
         Some((offset, Ok(RecipesResponse { total_pages, .. }))) => (
@@ -251,9 +255,15 @@ fn App() -> impl IntoView {
     let (ai_pref, set_ai_pref, _) = use_local_storage("use_ai", false);
     let (api_key, set_api_key, _) = use_local_storage::<Option<String>, _>("api_key", None);
     let (edit, edit_set) = create_signal(EditModal { state: None });
+    let window = web_sys::window().expect("Must be in a windowed i.e. browser setting (You'r not trying to run this in a wasm runtime are you?)");
+    let location = window.location();
+    let origin = location
+        .origin()
+        .expect("Must have an origin for this to work");
     let (minilm, set_minilm) =
-        create_signal::<Option<_>>(ai_pref.get_untracked().then(spawn_minilm));
+        create_signal::<Option<_>>(ai_pref.get_untracked().then(|| spawn_minilm(&origin)));
     provide_context(minilm);
+    let (origin, _) = create_signal(origin);
 
     let get_page_action = create_action(move |offset| {
         let offset = *offset;
@@ -300,7 +310,7 @@ fn App() -> impl IntoView {
             {move || {
                 let page = get_page_action.value().get();
                 page.map(|(offset, page)|{ view! {
-                    <NavBar offset get_page_action set_edit = edit_set  minilm set_minilm set_ai_pref set_api_key api_key/>
+                    <NavBar offset origin  get_page_action set_edit = edit_set  minilm set_minilm set_ai_pref set_api_key api_key/>
                     <ErrorRecipes offset = offset refresh_action = get_page_action page edit_modal = edit_set api_key/>
                 }})
             }}

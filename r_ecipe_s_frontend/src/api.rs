@@ -69,14 +69,14 @@ pub async fn update_recipe(id: i64, recipe: &Recipe, token: Option<&str>) -> Res
 
 pub async fn download(host: &str, static_file: &str) -> Result<Vec<u8>, Error> {
     // todo, fix
-    let resp = http::Request::get(&format!("http://{host}/static/{static_file}"))
+    let resp = http::Request::get(&format!("{host}/static/{static_file}"))
         .send()
         .await?;
     if !resp.ok() {
         let status = resp.status_text();
         let code = resp.status();
         let text = resp.text().await?;
-        return Err(Error::Http(format!("{status} {code} - {text}")));
+        Err(Error::Http(format!("{status} {code} - {text}")))
     } else {
         let body = resp.binary().await?;
         Ok(body)

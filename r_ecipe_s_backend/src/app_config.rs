@@ -20,6 +20,7 @@ pub struct DBConfig {
     pub database: String,
     pub user: String,
     pub password: String,
+    pub max_connections: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,6 +81,15 @@ impl AppConfig {
             info!("password from config file");
         }
 
+        if let Ok(Ok(db_max_conn)) =
+            std::env::var("R_ECIPE_S_DB_MAX_CONN").map(|val| val.parse::<u32>())
+        {
+            info!("db max connections from env");
+            db_config.max_connections = db_max_conn
+        } else {
+            info!("db max connections from config file");
+        }
+
         let mut http_config = conf.get::<HTTPConfig>("http")?;
         if let Ok(host) = std::env::var("R_ECIPE_S_SERVER_HOST") {
             info!("getting server host from env: {host}");
@@ -104,7 +114,11 @@ impl AppConfig {
             })?;
         }
 
-        let vector_search_config = conf.get::<VectorSearchConfig>("vector_search")?;
+        let mut vector_search_config = conf.get::<VectorSearchConfig>("vector_search")?;
+        if let Ok(host) = std::env::var("R_ECIPE_S_VECTOR_SEARCH_HOST") {
+            info!("getting search port key from env");
+            vector_search_config.host = host;
+        }
 
         Ok(AppConfig {
             http_config,

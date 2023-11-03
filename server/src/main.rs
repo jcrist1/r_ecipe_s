@@ -1,7 +1,6 @@
 //use actix_web::{dev::*, http::header, middleware::Logger, web::Data, *};
 use axum::http::StatusCode;
 use axum::Router;
-use futures::executor::block_on;
 use futures::future::abortable;
 use futures::FutureExt;
 use log::info;
@@ -12,15 +11,11 @@ use std::sync::Arc;
 use tracing::warn;
 
 use axum::routing::get_service;
-use axum::Extension;
-use env_logger;
 use r_ecipe_s_backend::app_config;
 use r_ecipe_s_backend::recipe_service::{RecipeAccess, RecipeService};
 use r_ecipe_s_backend::{db, search_indexer};
 use std::env;
-use std::fs;
 use thiserror::Error as ThisError;
-use tower::ServiceBuilder;
 use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
@@ -37,7 +32,7 @@ enum Error {
     #[error("r_ecipe_s database error {0}")]
     DB(#[from] db::Error),
     #[error("r_ecipe_s search indexing error {0}")]
-    SearchIndexer(#[from] search_indexer::Error),
+    SearchIndexer(#[from] search_indexer::ContextError),
     #[error("Failed to parse address from connection config: {0}")]
     AddrParse(#[from] AddrParseError),
     #[error("{0}")]
@@ -69,9 +64,10 @@ async fn main() -> Result<()> {
         vector_search_config,
     }: app_config::AppConfig = app_config::AppConfig::load("config/config.toml")?;
     info!("Running migrations: {db_config:?}");
-    let db_access = Arc::new(db::DBMigrator::new(&db_config).await?.migrate().await?);
+    let db_access = Arc::new(db::DbMigrator::new(&db_config).await?.migrate().await?);
     info!("Migrations successfully run!");
     env::set_current_dir("../frontend_ls")?;
+    info!("set directory");
 
     std::env::set_var("RUST_LOG", "axum=info,sqlx=warn");
     let api_key = std::env::var("API_KEY").expect("API_KEY  environment variable is not set");
@@ -132,9 +128,10 @@ async fn main() -> Result<()> {
     tracing::info!("Successfully bound server to {}", host_port);
     let http_server = axum::Server::bind(&sock_addr).serve(app.into_make_service());
 
-    let indexing = {
+    let indexing = Box::pin(
         r_ecipe_s_backend::search_indexer::index_loop(
             search_config,
+            db_access,
             vector_search_config,
             recipe_access,
         )
@@ -143,22 +140,40 @@ async fn main() -> Result<()> {
                 warn!("Error indexing: {err}")
             }
             res
-        })
-    };
-    let tasks = tokio::spawn(async move { tokio::join!(indexing, http_server) });
+        }),
+    );
+    let tasks = tokio::spawn(async move { futures::future::select(indexing, http_server).await });
     let (fut, handle) = abortable(tasks);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         handle.abort();
         hook(info);
     }));
+    use futures_util::future::Either as E;
     let res = fut
         .await
-        .map_err(|_err| Error::Message("Failed to run server tasks".into()))?;
-    let (index_loop_res, server_res) =
-        res.map_err(|err| Error::Message(format!("Some kind of join error: {err:?}")))?;
-    index_loop_res?;
-    server_res.map_err(|err| Error::Message(format!("Error in server: {err:?}")))?;
-
-    Ok(())
+        .map_err(|err| Error::Message(format!("Failed to run server tasks: {err}")))?
+        .map_err(|err| Error::Message(format!("Failed to get result of task: {err}")))?;
+    match res {
+        E::Left((Ok(()), _http_continuing)) => {
+            return Err(Error::Message(
+                "Search indexer finished early without error.".into(),
+            ))
+        }
+        E::Left((Err(err), _http_continuing)) => {
+            return Err(Error::Message(format!(
+                "Search indexer finished early because of {err}"
+            )));
+        }
+        E::Right((Ok(()), _indexing_continuing)) => {
+            return Err(Error::Message(
+                "Http server finished early without error.".into(),
+            ))
+        }
+        E::Right((Err(err), _indexing_continuing)) => {
+            return Err(Error::Message(format!(
+                "Http server finished early because of {err}"
+            )));
+        }
+    }
 }

@@ -1,8 +1,9 @@
 FROM --platform=linux/amd64 debian:bullseye-slim
+RUN apt-get update && apt-get install curl -y
 
-RUN mkdir -p frontend/
-COPY dist frontend/dist
-COPY static frontend/static
+RUN mkdir -p frontend_ls/
+COPY dist frontend_ls/dist
+COPY static frontend_ls/static
 
 RUN mkdir -p backend/config
 COPY r_ecipe_s_server backend/r_ecipe_s_server

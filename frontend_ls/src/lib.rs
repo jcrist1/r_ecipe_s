@@ -14,7 +14,10 @@ use r_ecipe_s_frontend::api::download;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct EncodeRequest(pub String);
+pub enum MiniLmWorkereComm {
+    ModelPath(String),
+    TextInput(String),
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct EncodeResponse(pub Vec<f32>);
@@ -101,9 +104,13 @@ impl<'a, T> AsMut<T> for LockGuard<'a, T> {
 }
 
 #[reactor]
-pub async fn EncodeOnDemand(mut scope: ReactorScope<EncodeRequest, EncodeResponse>) {
+pub async fn EncodeOnDemand(mut scope: ReactorScope<MiniLmWorkereComm, EncodeResponse>) {
     log!("Starting minilm");
-    let minilm_model = get_minilm("cristina-book.local:8080").await;
+    let Some(MiniLmWorkereComm::ModelPath(path)) = scope.next().await else {
+        warn!("Failed to get model path as first message");
+        return;
+    };
+    let minilm_model = get_minilm(&path).await;
     log!("Started minilm");
     let minilm = match minilm_model {
         Ok(minilm_model) => minilm_model,
@@ -112,15 +119,25 @@ pub async fn EncodeOnDemand(mut scope: ReactorScope<EncodeRequest, EncodeRespons
             return;
         }
     };
-    while let Some(request) = scope.next().await {
-        let Ok(encoded) = minilm.encode(&request.0) else {
-            warn!("Failed to encode data: {request}", request = request.0);
-            break;
-        };
+    loop {
+        match scope.next().await {
+            Some(MiniLmWorkereComm::TextInput(request)) => {
+                let Ok(encoded) = minilm.encode(&request) else {
+                    warn!("Failed to encode data: {request}", request = request);
+                    break;
+                };
 
-        if let Err(err) = scope.send(EncodeResponse(encoded)).await {
-            warn!("Failed to send encoded data. Cause: {err}");
-            break;
+                if let Err(err) = scope.send(EncodeResponse(encoded)).await {
+                    warn!("Failed to send encoded data. Cause: {err}");
+                    break;
+                }
+            }
+
+            Some(MiniLmWorkereComm::ModelPath(_)) => {
+                warn!("Received model path after initialisation.");
+                break;
+            }
+            _ => break,
         }
     }
 }
