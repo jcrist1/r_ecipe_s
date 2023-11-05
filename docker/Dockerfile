@@ -1,5 +1,4 @@
-FROM --platform=linux/amd64 debian:bullseye-slim
-RUN apt-get update && apt-get install curl -y
+FROM --platform=linux/amd64 debian:bullseye-20230919-slim
 
 RUN mkdir -p frontend_ls/
 COPY dist frontend_ls/dist

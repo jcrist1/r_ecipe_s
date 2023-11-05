@@ -1,6 +1,7 @@
 use leptos::logging::log;
 use leptos::*;
 use r_ecipe_s_model::{Ingredient, Quantity, Recipe, COUNT, GRAM, MATCHERS, ML, TSP};
+use uuid::Uuid;
 use web_sys::Event;
 
 use std::num::ParseIntError;
@@ -165,7 +166,7 @@ fn IngredientForm(
     }
 }
 
-pub type IndexedIngredientState = (i32, (ReadSignal<Ingredient>, WriteSignal<Ingredient>));
+pub type IndexedIngredientState = (Uuid, (ReadSignal<Ingredient>, WriteSignal<Ingredient>));
 #[component]
 pub fn Ingredients(ingredients: ReadSignal<Vec<IndexedIngredientState>>) -> impl IntoView {
     view! {
@@ -189,13 +190,13 @@ pub fn IngredientsForm(
     ingredients_data: ReadSignal<Vec<IndexedIngredientState>>,
     ingredients: WriteSignal<Vec<IndexedIngredientState>>,
 ) -> impl IntoView {
-    let mut idx = 0;
     view! {
         <div class = "grid grid-cols-1 gap-2">
             <For
                 each = move || ingredients_data.get()
                 key = |data| data.0
                 children = move | (idx, (get_ingredient, set_ingredient))| {
+                    log!("Ingredient {idx}");
                     view! {
                     <div class = "join w-full mx-auto" >
                         <IngredientForm ingredient = get_ingredient.get_untracked() set_ingredient />
@@ -225,10 +226,9 @@ pub fn IngredientsForm(
                                     quantity: Quantity::Count(0),
                                 });
                                 {
-                                    ingredients.push((idx, signals))
+                                    ingredients.push((uuid::Uuid::new_v4(), signals))
                                 }
                             });
-                            idx += 1
                         }
                     >
                        <svg xmlns="http://www.w3.org/2000/svg" height = "100%" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18 L12 6 M 18 12 L 6 12" /></svg>
@@ -260,8 +260,7 @@ impl RecipeWriteState {
         self.description.set(description);
         let ingredients = ingredients
             .into_iter()
-            .enumerate()
-            .map(|(idx, ingredient)| (idx as i32, create_signal(ingredient)))
+            .map(|ingredient| (uuid::Uuid::new_v4(), create_signal(ingredient)))
             .collect::<Vec<_>>();
         self.ingredients.set(ingredients);
     }

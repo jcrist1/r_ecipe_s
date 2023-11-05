@@ -1,4 +1,5 @@
 use gloo_net::http::{self, QueryParams};
+use leptos::logging::warn;
 use r_ecipe_s_model::{Recipe, RecipeWithId, RecipesResponse, SearchResponse};
 use serde::de::DeserializeOwned;
 use std::future::Future;
@@ -67,11 +68,18 @@ pub async fn update_recipe(id: i64, recipe: &Recipe, token: Option<&str>) -> Res
         .await
 }
 
-pub async fn download(host: &str, static_file: &str) -> Result<Vec<u8>, Error> {
+pub async fn download(origin: &str, host: &str, static_file: &str) -> Result<Vec<u8>, Error> {
     // todo, fix
-    let resp = http::Request::get(&format!("{host}/static/{static_file}"))
+    let resp = http::Request::get(&format!("https://{host}/{static_file}"))
+        .header("Origin", origin)
+        // .header(
+        //     "Access-Control-Request-Headers",
+        //     &format!("access-control-allow-origin: {origin}"),
+        // )
+        .header("Access-Control-Request-Method", "GET")
         .send()
         .await?;
+    warn!("Response was : {resp:#?}");
     if !resp.ok() {
         let status = resp.status_text();
         let code = resp.status();
