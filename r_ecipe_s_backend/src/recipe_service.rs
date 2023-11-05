@@ -1,7 +1,7 @@
 use crate::{
     app_config::{SearchConfig, VectorSearchConfig},
     auth::{AuthError, BearerToken, BearerValidation},
-    db::DBAccess,
+    db::DbAccess,
     search_indexer::{RECIPES_VEC_COLLECTION_NAME, R_ECIPE_S_INDEX_NAME},
 };
 use axum::{
@@ -88,7 +88,7 @@ impl IntoResponse for Error {
             Error::NotFoundId(_) => http::StatusCode::NOT_FOUND,
             Error::Vector(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (error_code, format!("{self:?}")).into_response()
+        (error_code, format!("{self}")).into_response()
     }
 }
 
@@ -173,7 +173,7 @@ where
 }
 
 pub struct RecipeAccess {
-    db_access: Arc<DBAccess>,
+    db_access: Arc<DbAccess>,
 }
 
 #[derive(Serialize, Deserialize, Debug, FromRow)]
@@ -231,7 +231,7 @@ impl RecipeAccess {
             "#,
             batch_size as i64
         )
-        .fetch(&mut transaction)
+        .fetch(transaction.as_mut())
         .map(
             |rep_res: std::result::Result<RecipeRep, _>| -> Result<RecipeWithId> {
                 let recipe = rep_res?;
@@ -268,7 +268,7 @@ impl RecipeAccess {
                         "#,
                         *id
                     )
-                    .fetch_one(&mut executor) // We are guaranteed to
+                    .fetch_one(executor.as_mut()) // We are guaranteed to
                     .await
                     .map(|row| row.id)
                     .map_err(Error::from)?;
@@ -464,7 +464,7 @@ impl RecipeAccess {
             "#,
             id
         )
-        .fetch_optional(&mut transaction)
+        .fetch_optional(transaction.as_mut())
         .await?
         .map(|rep| rep.model_with_id());
         Ok((ret, transaction))
@@ -472,7 +472,7 @@ impl RecipeAccess {
 }
 
 impl RecipeAccess {
-    pub fn new(db_access: &Arc<DBAccess>) -> Self {
+    pub fn new(db_access: &Arc<DbAccess>) -> Self {
         RecipeAccess {
             db_access: Arc::clone(db_access),
         }
@@ -601,7 +601,6 @@ pub(crate) async fn search_recipe(
             (id, (hit.result.id, (hit.result, score)))
         })
         .unzip::<_, _, HashSet<_>, HashMap<_, _>>();
-    //.collect();
 
     let (vector_ids, mut vector_results) = vector_results
         .into_iter()

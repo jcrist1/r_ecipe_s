@@ -1,9 +1,9 @@
 use futures::stream::TryStreamExt;
 use futures_util::StreamExt;
 // use futures_util::TryStreamExt;
-use meilisearch_sdk::client::Client;
 use meilisearch_sdk::errors::Error as MeiliError;
 use meilisearch_sdk::indexes::Index;
+use meilisearch_sdk::{client::Client, MeilisearchError};
 use qdrant_client::{
     prelude::{QdrantClient, QdrantClientConfig},
     qdrant::{
@@ -12,10 +12,14 @@ use qdrant_client::{
     },
 };
 use sqlx::postgres::{PgListener, PgNotification};
+use sqlx::{Connection, PgPool};
+use std::fmt::Display;
 use std::{collections::HashMap, num::ParseIntError, sync::Arc, time::Duration};
 use thiserror::Error as ThisError;
 use tracing::log::{debug, error, info};
+use tracing::warn;
 
+use crate::db::DbAccess;
 use crate::{
     app_config::{SearchConfig, VectorSearchConfig},
     recipe_service::{self, RecipeAccess},
@@ -43,7 +47,64 @@ impl Error {
     }
 }
 
-type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug)]
+pub struct ContextError {
+    err: Error,
+    context: Vec<String>,
+}
+impl Display for ContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}, context:\n", self.err)?;
+        self.context
+            .iter()
+            .map(|context| writeln!(f, "{context}"))
+            .collect::<std::result::Result<Vec<()>, _>>()?;
+        Ok(())
+    }
+}
+impl std::error::Error for ContextError {}
+impl ContextError {
+    fn more_context<S: ToString>(mut self, message: S) -> Self {
+        self.context.push(message.to_string());
+        self
+    }
+}
+
+impl<T> ContextualError<T> for Result<T> {
+    fn context<S: ToString>(self, message: S) -> Result<T> {
+        self.map_err(|err| err.more_context(message))
+    }
+}
+
+trait ContextualError<T> {
+    fn context<S: ToString>(self, message: S) -> Result<T>;
+}
+
+impl<E> From<E> for ContextError
+where
+    Error: From<E>,
+{
+    fn from(value: E) -> Self {
+        ContextError {
+            err: Error::from(value),
+            context: vec![],
+        }
+    }
+}
+
+impl<T, E> ContextualError<T> for std::result::Result<T, E>
+where
+    Error: From<E>,
+{
+    fn context<S: ToString>(self, message: S) -> Result<T> {
+        self.map_err(|err| ContextError {
+            err: Error::from(err),
+            context: vec![message.to_string()],
+        })
+    }
+}
+
+type Result<T> = std::result::Result<T, ContextError>;
 
 pub(crate) const R_ECIPE_S_INDEX_NAME: &str = "r_ecipe_s";
 pub(crate) const RECIPES_VEC_COLLECTION_NAME: &str = "recipes";
@@ -82,7 +143,7 @@ use qdrant_client::prelude::Value;
 
 impl CanIndex {
     async fn index(&self, id: i64) -> Result<()> {
-        println!("INDEX");
+        info!("INDEX");
         let (recipe, transaction) = self.indexer.recipe_access.get_by_id_for_update(id).await?;
         let Some(mut recipe) = recipe else {
             return Ok(());
@@ -111,9 +172,9 @@ impl CanIndex {
                 .await
                 // todo: delete
                 .map_err(Error::qdrant)?;
-            debug!("Successful indexing");
+            info!("Successful indexing");
         } else {
-            debug!("No embedding");
+            info!("No embedding");
         }
         let recipe_arr = [recipe];
         self.index
@@ -129,16 +190,19 @@ impl CanIndex {
     }
 }
 
-pub async fn process_notification(can_index: &CanIndex, not: PgNotification) -> Result<()> {
+async fn process_notification(can_index: &CanIndex, not: PgNotification) -> Result<()> {
     let payload = not.payload();
     info!("Payload: {payload}");
-    let id: i64 = payload.parse()?;
+    let id: i64 = payload
+        .parse::<i64>()
+        .context("Failed to parse i64 form notification")?;
     can_index.index(id).await?;
     Ok(())
 }
 
 pub async fn index_loop(
     search_config: SearchConfig,
+    db_access: Arc<DbAccess>,
     vector_search_config: VectorSearchConfig,
     recipe_access: Arc<RecipeAccess>,
 ) -> Result<()> {
@@ -177,14 +241,56 @@ pub async fn index_loop(
     }
 
     let can_index = CanIndex { index, indexer };
-    let mut listener =
-        PgListener::connect("postgresql://r_ecipe_s_user:secret123@localhost/r-ecipe-s").await?;
-    listener.listen("search_index").await?;
+    let can_index = Arc::new(can_index);
+    match can_index
+        .indexer
+        .search_client
+        .get_index(can_index.index.clone())
+        .await
+    {
+        Err(meilisearch_sdk::Error::Meilisearch(MeilisearchError {
+            error_code: meilisearch_sdk::ErrorCode::IndexNotFound,
+            ..
+        })) => {
+            warn!(
+                "Failed to find search index {}. Recreating",
+                can_index.index.uid
+            );
+            let can_index = Arc::clone(&can_index);
+            can_index
+                .indexer
+                .search_client
+                .create_index(
+                    can_index.index.uid.clone(),
+                    can_index
+                        .index
+                        .primary_key
+                        .clone()
+                        .as_ref()
+                        .map(AsRef::<str>::as_ref),
+                )
+                .await?;
+        }
+        Err(err) => return Err(err.into()),
+        Ok(_) => (),
+    };
+    info!("Creating listener");
+    let mut listener = PgListener::connect_with(db_access.get_pool())
+        .await
+        .context("Failed to create listener")?;
+    info!("Subscribing to search_index notification stream");
+    listener
+        .listen("search_index")
+        .await
+        .context("Failed to start listening to 'search_index' topic")?;
+    info!("Starting listen loop");
     listener
         .into_stream()
-        .map(|res| res.map_err(Error::from))
+        .map(|res| res.map_err(ContextError::from))
         .try_fold(can_index, |can_index, not| async move {
-            process_notification(&can_index, not).await?;
+            process_notification(&can_index, not)
+                .await
+                .context("Failed to process a notification")?;
             Ok(can_index)
         })
         .await?;

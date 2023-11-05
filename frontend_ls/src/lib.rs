@@ -5,29 +5,30 @@ use std::{
     time::Duration,
 };
 
-use futures::{Sink, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 use futures_timer::Delay;
-use gloo_worker::reactor::{reactor, ReactorScope};
+use gloo_worker::{
+    oneshot::{self, oneshot},
+    reactor::{reactor, ReactorScope},
+};
 use leptos::logging::{log, warn};
+use leptos::prelude::{SignalGet, SignalSet};
+use leptos_use::storage::use_local_storage;
 use minilm::{Cpu, MiniLM};
 use r_ecipe_s_frontend::api::download;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct EncodeRequest(pub String);
+pub enum MiniLmWorkereComm {
+    ModelData {
+        tokenizer_bytes: Vec<u8>,
+        weights_bytes: Vec<u8>,
+    },
+    TextInput(String),
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct EncodeResponse(pub Vec<f32>);
-
-async fn get_minilm(host: &str) -> Result<MiniLM<f32, Cpu>, Error> {
-    let tokenizer_bytes = download(host, "tokenizer.json")
-        .await
-        .map_err(|err| Error::Msg(format!("{err}")))?;
-    let model_bytes = download(host, "model.safetensors")
-        .await
-        .map_err(|err| Error::Msg(format!("{err}")))?;
-    MiniLM::new(&tokenizer_bytes, &model_bytes).map_err(|err| Error::Msg(format!("{err}")))
-}
 
 /// A single threaded async mutex
 
@@ -101,26 +102,40 @@ impl<'a, T> AsMut<T> for LockGuard<'a, T> {
 }
 
 #[reactor]
-pub async fn EncodeOnDemand(mut scope: ReactorScope<EncodeRequest, EncodeResponse>) {
+pub async fn EncodeOnDemand(mut scope: ReactorScope<MiniLmWorkereComm, EncodeResponse>) {
     log!("Starting minilm");
-    let minilm_model = get_minilm("cristina-book.local:8080").await;
-    log!("Started minilm");
-    let minilm = match minilm_model {
-        Ok(minilm_model) => minilm_model,
-        Err(err) => {
-            warn!("Failed to instantiate MiniLM: {err}");
-            return;
-        }
+    let Some(MiniLmWorkereComm::ModelData {
+        tokenizer_bytes,
+        weights_bytes,
+    }) = scope.next().await
+    else {
+        warn!("Failed to get model data as first message");
+        return;
     };
-    while let Some(request) = scope.next().await {
-        let Ok(encoded) = minilm.encode(&request.0) else {
-            warn!("Failed to encode data: {request}", request = request.0);
-            break;
-        };
+    let Ok(minilm) = MiniLM::new(&tokenizer_bytes, &weights_bytes) else {
+        warn!("Failed to create model from provided data");
+        return;
+    };
+    log!("Started minilm");
+    loop {
+        match scope.next().await {
+            Some(MiniLmWorkereComm::TextInput(request)) => {
+                let Ok(encoded) = minilm.encode(&request) else {
+                    warn!("Failed to encode data: {request}", request = request);
+                    break;
+                };
 
-        if let Err(err) = scope.send(EncodeResponse(encoded)).await {
-            warn!("Failed to send encoded data. Cause: {err}");
-            break;
+                if let Err(err) = scope.send(EncodeResponse(encoded)).await {
+                    warn!("Failed to send encoded data. Cause: {err}");
+                    break;
+                }
+            }
+
+            Some(MiniLmWorkereComm::ModelData { .. }) => {
+                warn!("Received model path after initialisation.");
+                break;
+            }
+            _ => break,
         }
     }
 }

@@ -1,8 +1,8 @@
-FROM --platform=linux/amd64 debian:bullseye-slim
+FROM --platform=linux/amd64 debian:bullseye-20230919-slim
 
-RUN mkdir -p frontend/
-COPY dist frontend/dist
-COPY static frontend/static
+RUN mkdir -p frontend_ls/
+COPY dist frontend_ls/dist
+COPY static frontend_ls/static
 
 RUN mkdir -p backend/config
 COPY r_ecipe_s_server backend/r_ecipe_s_server

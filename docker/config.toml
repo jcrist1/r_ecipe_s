@@ -4,12 +4,17 @@ port = 5432
 user = "r_ecipe_s_user"
 database = "r-ecipe-s"
 password = "secret"
+max_connections = 5
 
 [http]
 port = 8000
 host = "[::]"
 
 [search]
-port = 80
-host = "r-ecipe-s-search.internal"
+port = 7700
+host = "r-ecipe-s-search.fly.dev"
 api_key = "secret"
+
+[vector_search]
+port = 6334
+host = "r-ecipe-s-search.fly.dev"

@@ -7,7 +7,7 @@ edition = "2021"
 
 
 [dependencies]
-sqlx = { version = "0.6", features = [ "migrate", "runtime-tokio-rustls", "postgres", "json",
+sqlx = { version = "0.7", features = [ "migrate", "runtime-tokio-rustls", "postgres", "json",
 "time"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.30"
@@ -18,7 +18,7 @@ futures = "0.3"
 futures-util = "0.3.19"
 r_ecipe_s_model = { path = "../r_ecipe_s_model/"}
 time = "0.3"
-meilisearch-sdk = "0.24"
+meilisearch-sdk = { version = "0.24.2", no-default-features = true, features = ["isahc-static-ssl"], default-features = false }
 axum = {version = "0.5", features = ["headers"]}
 tower-service = "0.3"
 async-trait = "0.1.53"

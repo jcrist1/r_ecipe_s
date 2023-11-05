@@ -1,6 +1,6 @@
 use either::Either;
 use frontend_ls::{AsyncMutex, EncodeOnDemand, Error};
-use frontend_ls::{EncodeRequest, EncodeResponse};
+use frontend_ls::{EncodeResponse, MiniLmWorkereComm};
 use gloo_worker::reactor::ReactorBridge;
 
 use std::time::Duration;
@@ -29,18 +29,74 @@ fn DivViewWIthText(text: String) -> impl IntoView {
 
 type MiniLmRead = ReadSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
 type MiniLmWrite = WriteSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
+type MiniLmActionValue = RwSignal<Option<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>>;
+type MiniLmAction = Action<bool, Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
 
-async fn get_embedding(minilm: Option<MiniLmRead>, input: String) -> Option<Vec<f32>> {
-    let bridge = minilm?.get_untracked()?;
+async fn get_minilm(
+    self_host: &str,
+    get_tokenizer: Signal<Option<Vec<u8>>>,
+    set_tokenizer: WriteSignal<Option<Vec<u8>>>,
+    get_weights: ReadSignal<Option<Vec<u8>>>,
+    set_weights: WriteSignal<Option<Vec<u8>>>,
+) -> Result<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>, Error> {
+    let tokenizer_bytes = match get_tokenizer.get_untracked() {
+        Some(bytes) => bytes,
+        None => {
+            let bytes = download(self_host, "data.gigapixel.dev", "tokenizer.json")
+                .await
+                .map_err(|err| Error::Msg(format!("{err}")))?;
+            set_tokenizer.set(Some(bytes.clone()));
+            bytes
+        }
+    };
+
+    let model_bytes = match get_weights.get_untracked() {
+        Some(bytes) => bytes,
+        None => {
+            let bytes = download(self_host, "data.gigapixel.dev", "minilm.safetensors")
+                .await
+                .map_err(|err| Error::Msg(format!("{err}")))?;
+            log!("Setting weights");
+            set_weights.set(Some(bytes.clone()));
+            log!("Weights are: {:?}", get_weights.get_untracked().map(|_| ()));
+            bytes
+        }
+    };
+    let minilm = spawn_minilm(tokenizer_bytes, model_bytes);
+    {
+        let mut guard = minilm.lock().await;
+        guard
+            .as_mut()
+            .send_input(MiniLmWorkereComm::TextInput("".into()));
+        guard
+            .as_mut()
+            .next()
+            .await
+            .ok_or_else(|| Error::Msg("Failed to get first vector from MiniLm".into()))?;
+    }
+    Ok::<_, Error>(minilm)
+}
+
+async fn get_embedding(minilm: Option<MiniLmActionValue>, input: String) -> Option<Vec<f32>> {
+    let bridge = minilm?.get_untracked()??;
     let mut guard = bridge.lock().await;
-    guard.as_mut().send_input(EncodeRequest(input));
+    guard
+        .as_mut()
+        .send_input(MiniLmWorkereComm::TextInput(input));
     let EncodeResponse(output) = guard.as_mut().next().await?;
     Some(output)
 }
 
-fn spawn_minilm() -> Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>> {
+fn spawn_minilm(
+    tokenizer_bytes: Vec<u8>,
+    weights_bytes: Vec<u8>,
+) -> Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>> {
     log!("Starting web worker");
     let bridge = EncodeOnDemand::spawner().spawn("/worker.js");
+    bridge.send_input(MiniLmWorkereComm::ModelData {
+        tokenizer_bytes,
+        weights_bytes,
+    });
     Rc::new(AsyncMutex::new(bridge))
 }
 
@@ -49,13 +105,12 @@ fn NavBar(
     offset: i64,
     set_edit: WriteSignal<EditModal>,
     get_page_action: Action<i64, (i64, Result<RecipesResponse, Error>)>,
-    minilm: MiniLmRead,
-    set_minilm: MiniLmWrite,
     set_ai_pref: WriteSignal<bool>,
+    minilm_action: MiniLmAction,
     api_key: Signal<Option<String>>,
     set_api_key: WriteSignal<Option<String>>,
 ) -> impl IntoView {
-    let spawn_minilm = move || set_minilm.set(Some(spawn_minilm()));
+    //let spawn_minilm = move || set_minilm.set(Some(spawn_minilm(&origin.get_untracked())));
 
     let (_, right_disabled): (View, &str) = match get_page_action.value().get_untracked() {
         Some((offset, Ok(RecipesResponse { total_pages, .. }))) => (
@@ -85,6 +140,7 @@ fn NavBar(
         let (query, _) = create_signal(query.to_owned());
         async move {
             let query = query.get_untracked();
+            let minilm = minilm_action.value();
             let vector = get_embedding(Some(minilm), query.clone()).await;
             let x = search(
                 &query,
@@ -173,26 +229,32 @@ fn NavBar(
                     <li>
 
             {
-                move || minilm.get().map(|_| {
-                    view! {
-                        <button class="btn-sm" on:click=move |_| {
-                            set_minilm.set(None);
-                            set_ai_pref.set(false)
-                        }>
-                            Use AI search X
-                        </button>
-                    }
-                })
-                .unwrap_or_else(|| {
-                    view! {
-                        <button class="btn-sm" on:click=move |_| {
-                            set_ai_pref.set(true);
-                            spawn_minilm()
-                        }>
-                            Use AI search O
-                        </button>
-                    }
-                })
+                move || if minilm_action.pending().get() {view! {
+                    <button class="btn-sm">
+                        <div class="loading loading-infinity loading-sm" />
+                    </button>
+                }} else {
+                        minilm_action.value().get().flatten().map(|_| {
+                        view! {
+                            <button class="btn-sm" on:click=move |_| {
+                                set_ai_pref.set(false);
+                                minilm_action.dispatch(false)
+                            }>
+                               Disable AI Search
+                            </button>
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        view! {
+                            <button class="btn-sm" on:click=move |_| {
+                                set_ai_pref.set(true);
+                                minilm_action.dispatch(true)
+                            }>
+                                Use AI search
+                            </button>
+                        }
+                    })
+                }
             }
                         </li>
                     </ul>
@@ -251,9 +313,43 @@ fn App() -> impl IntoView {
     let (ai_pref, set_ai_pref, _) = use_local_storage("use_ai", false);
     let (api_key, set_api_key, _) = use_local_storage::<Option<String>, _>("api_key", None);
     let (edit, edit_set) = create_signal(EditModal { state: None });
-    let (minilm, set_minilm) =
-        create_signal::<Option<_>>(ai_pref.get_untracked().then(spawn_minilm));
-    provide_context(minilm);
+    let window = web_sys::window().expect("Must be in a windowed i.e. browser setting (You'r not trying to run this in a wasm runtime are you?)");
+    let location = window.location();
+    let origin = location
+        .origin()
+        .expect("Must have an origin for this to work");
+    let origin: &'static str = origin.leak();
+    let (get_tokenizer, set_tokenizer, _) = use_local_storage("tokenizer_bytes", None);
+    let (get_weights, set_weights) = create_signal(None);
+
+    log!("Origin: {origin}");
+
+    let minilm_action = create_action(move |use_minilm: &bool| {
+        let use_minilm = *use_minilm;
+        async move {
+            if use_minilm {
+                match get_minilm(
+                    origin,
+                    get_tokenizer,
+                    set_tokenizer,
+                    get_weights,
+                    set_weights,
+                )
+                .await
+                {
+                    Ok(minilm) => Some(minilm),
+                    Err(err) => {
+                        warn!("Failed to spawn minilm: {err}");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+    });
+    minilm_action.dispatch(ai_pref.get());
+    provide_context(minilm_action);
 
     let get_page_action = create_action(move |offset| {
         let offset = *offset;
@@ -300,7 +396,7 @@ fn App() -> impl IntoView {
             {move || {
                 let page = get_page_action.value().get();
                 page.map(|(offset, page)|{ view! {
-                    <NavBar offset get_page_action set_edit = edit_set  minilm set_minilm set_ai_pref set_api_key api_key/>
+                    <NavBar offset get_page_action set_edit = edit_set set_ai_pref minilm_action set_api_key api_key/>
                     <ErrorRecipes offset = offset refresh_action = get_page_action page edit_modal = edit_set api_key/>
                 }})
             }}
@@ -360,7 +456,7 @@ pub fn RecipeView<B: Clone + 'static>(
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
     let (read_toggle, set_toggle) = create_signal(edit_flag);
-    let minilm = use_context::<ReadSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>>();
+    let minilm = use_context::<MiniLmAction>();
     let (read_state, write_state) = match recipe_state {
         Either::Left(recipe) => {
             let (read_state, write_state) = RecipeState::state();
@@ -377,7 +473,7 @@ pub fn RecipeView<B: Clone + 'static>(
         async move {
             let api_key = api_key.as_ref().map(AsRef::as_ref);
             let text = format!("{}\n{}", recipe.name, recipe.description);
-            let embedding = get_embedding(minilm, text).await;
+            let embedding = get_embedding(minilm.as_ref().map(Action::value), text).await;
             let recipe = Recipe {
                 embedding,
                 ..recipe.clone()
@@ -605,7 +701,6 @@ enum DeleteStates {
     Deleted,
 }
 
-use std::future::Future;
 #[component]
 fn Delete<B: Clone + 'static>(
     id: i64,

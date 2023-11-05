@@ -4,6 +4,7 @@ port = 5432
 user = "r_ecipe_s_user"
 database = "r_ecipe_s"
 password = ""
+max_connections = 5
 
 [http]
 port = 8000

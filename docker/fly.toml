@@ -1,46 +1,42 @@
-# fly.toml file generated for r-ecipe-s-server on 2022-04-04T00:32:52+02:00
+# fly.toml app configuration file generated for r-ecipe-s-server on 2023-11-01T22:03:44+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
 app = "r-ecipe-s-server"
-
+primary_region = "ams"
 kill_signal = "SIGINT"
-kill_timeout = 5
-processes = []
-
-[env]
-  R_ECIPE_S_SERVER_HOST = "0.0.0.0"
-  R_ECIPE_S_SEARCH_HOST = "r-ecipe-s-search.internal"
-  R_ECIPE_S_SEARCH_PORT = "7700"
-  RUST_LOG = "info,tower_http=debug,sqlx=warn"
+kill_timeout = "5s"
 
 [experimental]
-  allowed_public_ports = []
   auto_rollback = true
-  cmd = []
-  entrypoint = []
-  exec = []
+
+[build]
+
+[env]
+  RUST_LOG = "INFO,tower_http=debug,sqlx=warn"
+  R_ECIPE_S_SEARCH_HOST = "r-ecipe-s-search.internal"
+  R_ECIPE_S_VECTOR_SEARCH_HOST = "r-ecipe-s-search.internal"
+  R_ECIPE_S_SEARCH_PORT = "7700"
+  R_ECIPE_S_SERVER_HOST = "0.0.0.0"
 
 [[services]]
-  http_checks = []
-  internal_port = 8000
-  processes = []
   protocol = "tcp"
-  script_checks = []
+  internal_port = 8000
 
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
   [services.concurrency]
+    type = "connections"
     hard_limit = 25
     soft_limit = 20
-    type = "connections"
-
-  [[services.ports]]
-    handlers = ["http"]
-    port = 80
-
-  [[services.ports]]
-    handlers = ["tls", "http"]
-    port = 443
 
   [[services.tcp_checks]]
-    grace_period = "1s"
     interval = "15s"
-    restart_limit = 0
     timeout = "2s"
+    grace_period = "1s"
