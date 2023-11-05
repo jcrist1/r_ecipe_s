@@ -102,19 +102,6 @@ impl<'a, T> AsMut<T> for LockGuard<'a, T> {
 }
 
 #[reactor]
-pub async fn DownloadInBackground(mut scope: ReactorScope<(String, String), Vec<u8>>) {
-    while let Some((self_host, file)) = scope.next().await {
-        let data = download(&self_host, "data.gigapixel.dev", &file)
-            .await
-            .unwrap_or_else(|err| panic!("Failed to download tokenizer: {err}"));
-        if let Err(err) = scope.send(data).await {
-            warn!("Failed to send download: {err}");
-            break;
-        };
-    }
-}
-
-#[reactor]
 pub async fn EncodeOnDemand(mut scope: ReactorScope<MiniLmWorkereComm, EncodeResponse>) {
     log!("Starting minilm");
     let Some(MiniLmWorkereComm::ModelData {
