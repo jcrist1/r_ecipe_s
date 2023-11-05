@@ -1,7 +1,6 @@
 use either::Either;
-use frontend_ls::{AsyncMutex, DownloadInBackground, EncodeOnDemand, Error};
+use frontend_ls::{AsyncMutex, EncodeOnDemand, Error};
 use frontend_ls::{EncodeResponse, MiniLmWorkereComm};
-use gloo_worker::oneshot::OneshotBridge;
 use gloo_worker::reactor::ReactorBridge;
 
 use std::time::Duration;
@@ -35,44 +34,29 @@ type MiniLmAction = Action<bool, Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDema
 
 async fn get_minilm(
     self_host: &str,
-    downloader: Rc<AsyncMutex<ReactorBridge<DownloadInBackground>>>,
     get_tokenizer: Signal<Option<Vec<u8>>>,
     set_tokenizer: WriteSignal<Option<Vec<u8>>>,
     get_weights: ReadSignal<Option<Vec<u8>>>,
     set_weights: WriteSignal<Option<Vec<u8>>>,
 ) -> Result<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>, Error> {
-    log!("Starting download");
     let tokenizer_bytes = match get_tokenizer.get_untracked() {
-        Some(bytes) => {
-            log!("got tokenizer?");
-            bytes
-        }
+        Some(bytes) => bytes,
         None => {
-            log!("downloading tokenizer");
-            let mut downloader = downloader.lock().await;
-            downloader.send_input((self_host.to_string(), "tokenizer.json".to_string()));
-            let bytes = downloader
-                .next()
+            let bytes = download(self_host, "data.gigapixel.dev", "tokenizer.json")
                 .await
-                .ok_or_else(|| Error::Msg("Failed to get tokenizer".into()))?;
+                .map_err(|err| Error::Msg(format!("{err}")))?;
             set_tokenizer.set(Some(bytes.clone()));
             bytes
         }
     };
 
     let model_bytes = match get_weights.get_untracked() {
-        Some(bytes) => {
-            log!("got model weights?");
-            bytes
-        }
+        Some(bytes) => bytes,
         None => {
-            log!("downloading model");
-            let mut downloader = downloader.lock().await;
-            downloader.send_input((self_host.to_string(), "minilm.safetensors".to_string()));
-            let bytes = downloader
-                .next()
+            let bytes = download(self_host, "data.gigapixel.dev", "minilm.safetensors")
                 .await
-                .ok_or_else(|| Error::Msg("Failed to get download weights".into()))?;
+                .map_err(|err| Error::Msg(format!("{err}")))?;
+            log!("Setting weights");
             set_weights.set(Some(bytes.clone()));
             log!("Weights are: {:?}", get_weights.get_untracked().map(|_| ()));
             bytes
@@ -330,10 +314,6 @@ fn App() -> impl IntoView {
     let (api_key, set_api_key, _) = use_local_storage::<Option<String>, _>("api_key", None);
     let (edit, edit_set) = create_signal(EditModal { state: None });
     let window = web_sys::window().expect("Must be in a windowed i.e. browser setting (You'r not trying to run this in a wasm runtime are you?)");
-
-    let downloader = Rc::new(AsyncMutex::new(
-        DownloadInBackground::spawner().spawn_with_loader("/downloader.js"),
-    ));
     let location = window.location();
     let origin = location
         .origin()
@@ -345,13 +325,11 @@ fn App() -> impl IntoView {
     log!("Origin: {origin}");
 
     let minilm_action = create_action(move |use_minilm: &bool| {
-        let downloader = downloader.clone();
         let use_minilm = *use_minilm;
         async move {
             if use_minilm {
                 match get_minilm(
                     origin,
-                    downloader,
                     get_tokenizer,
                     set_tokenizer,
                     get_weights,
