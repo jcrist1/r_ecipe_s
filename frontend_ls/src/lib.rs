@@ -7,15 +7,7 @@ use std::{
 
 use futures::{SinkExt, StreamExt};
 use futures_timer::Delay;
-use gloo_worker::{
-    oneshot::{self, oneshot},
-    reactor::{reactor, ReactorScope},
-};
 use leptos::logging::{log, warn};
-use leptos::prelude::{SignalGet, SignalSet};
-use leptos_use::storage::use_local_storage;
-use minilm::{Cpu, MiniLM};
-use r_ecipe_s_frontend::api::download;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -101,44 +93,6 @@ impl<'a, T> AsMut<T> for LockGuard<'a, T> {
     }
 }
 
-#[reactor]
-pub async fn EncodeOnDemand(mut scope: ReactorScope<MiniLmWorkereComm, EncodeResponse>) {
-    log!("Starting minilm");
-    let Some(MiniLmWorkereComm::ModelData {
-        tokenizer_bytes,
-        weights_bytes,
-    }) = scope.next().await
-    else {
-        warn!("Failed to get model data as first message");
-        return;
-    };
-    let Ok(minilm) = MiniLM::new(&tokenizer_bytes, &weights_bytes) else {
-        warn!("Failed to create model from provided data");
-        return;
-    };
-    log!("Started minilm");
-    loop {
-        match scope.next().await {
-            Some(MiniLmWorkereComm::TextInput(request)) => {
-                let Ok(encoded) = minilm.encode(&request) else {
-                    warn!("Failed to encode data: {request}", request = request);
-                    break;
-                };
-
-                if let Err(err) = scope.send(EncodeResponse(encoded)).await {
-                    warn!("Failed to send encoded data. Cause: {err}");
-                    break;
-                }
-            }
-
-            Some(MiniLmWorkereComm::ModelData { .. }) => {
-                warn!("Received model path after initialisation.");
-                break;
-            }
-            _ => break,
-        }
-    }
-}
 #[derive(thiserror::Error, Debug, Clone, Deserialize, Serialize)]
 pub enum Error {
     #[error("{0}")]

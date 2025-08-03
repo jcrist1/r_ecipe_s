@@ -61,3 +61,5 @@ Then run to the following propagate the new env variables
 ```sh
 flyctl deploy
 ```
+
+Have to configure rayon with `RAYON_NUM_THREADS`

@@ -1,0 +1,3 @@
+-- Add migration script here
+CREATE EXTENSION IF NOT EXISTS pg_search CASCADE;
+CREATE EXTENSION IF NOT EXISTS vchord CASCADE;

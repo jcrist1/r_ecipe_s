@@ -1,6 +1,6 @@
 use gloo_net::http::{self, QueryParams};
 use leptos::logging::warn;
-use r_ecipe_s_model::{Recipe, RecipeWithId, RecipesResponse, SearchResponse};
+use r_ecipe_s_backend::model::{Recipe, RecipeId, RecipeWithId, RecipesResponse, SearchResponse};
 use serde::de::DeserializeOwned;
 use std::future::Future;
 use std::pin::Pin;
@@ -43,7 +43,7 @@ impl HttpErr for http::Response {
     }
 }
 
-pub async fn put_recipe(recipe: &Recipe, token: Option<&str>) -> Result<i64, Error> {
+pub async fn put_recipe(recipe: &Recipe, token: Option<&str>) -> Result<RecipeId, Error> {
     let token = token.ok_or(Error::Forbidden)?;
     http::Request::put("/api/v1/recipes")
         .header("Content-Type", "application/json")
@@ -51,11 +51,15 @@ pub async fn put_recipe(recipe: &Recipe, token: Option<&str>) -> Result<i64, Err
         .body(&serde_json::to_string(recipe)?)?
         .send()
         .await?
-        .http_ok_json::<i64>()
+        .http_ok_json::<RecipeId>()
         .await
 }
 
-pub async fn update_recipe(id: i64, recipe: &Recipe, token: Option<&str>) -> Result<i64, Error> {
+pub async fn update_recipe(
+    id: RecipeId,
+    recipe: &Recipe,
+    token: Option<&str>,
+) -> Result<RecipeId, Error> {
     let token = token.ok_or(Error::Forbidden)?;
     http::Request::post(&format!("/api/v1/recipes/{id}"))
         .header("Content-Type", "application/json")
@@ -64,31 +68,8 @@ pub async fn update_recipe(id: i64, recipe: &Recipe, token: Option<&str>) -> Res
         .send()
         // .expect("failed to get response from POST recipes/:id")
         .await?
-        .http_ok_json::<i64>()
+        .http_ok_json::<RecipeId>()
         .await
-}
-
-pub async fn download(origin: &str, host: &str, static_file: &str) -> Result<Vec<u8>, Error> {
-    // todo, fix
-    let resp = http::Request::get(&format!("https://{host}/{static_file}"))
-        .header("Origin", origin)
-        // .header(
-        //     "Access-Control-Request-Headers",
-        //     &format!("access-control-allow-origin: {origin}"),
-        // )
-        .header("Access-Control-Request-Method", "GET")
-        .send()
-        .await?;
-    warn!("Response was : {resp:#?}");
-    if !resp.ok() {
-        let status = resp.status_text();
-        let code = resp.status();
-        let text = resp.text().await?;
-        Err(Error::Http(format!("{status} {code} - {text}")))
-    } else {
-        let body = resp.binary().await?;
-        Ok(body)
-    }
 }
 
 pub async fn get_recipes_at_offset(offset: i64) -> Result<RecipesResponse, Error> {
@@ -99,7 +80,7 @@ pub async fn get_recipes_at_offset(offset: i64) -> Result<RecipesResponse, Error
         .await
 }
 
-pub async fn delete_recipe(id: i64, token: Option<&str>) -> Result<(), Error> {
+pub async fn delete_recipe(id: RecipeId, token: Option<&str>) -> Result<(), Error> {
     let token = token.ok_or(Error::Forbidden)?;
     http::Request::delete(&format!("/api/v1/recipes/{id}"))
         .header("Authorization", &format!("Bearer {token}"))
@@ -108,13 +89,18 @@ pub async fn delete_recipe(id: i64, token: Option<&str>) -> Result<(), Error> {
         .http_ok_json::<()>()
         .await
 }
-pub async fn search(query: &str, vector: Option<&[f32]>) -> Result<SearchResponse, Error> {
-    http::Request::post(&format!("/api/v1/recipes/search"))
+
+pub async fn search(query: &str, hybrid: bool) -> Result<SearchResponse, Error> {
+    let request = http::Request::get("/api/v1/recipes/search")
         .header("Content-Type", "application/json")
-        .query([("query", query)])
-        .body(serde_json::to_string(&vector)?)?
-        .send()
-        .await?
-        .http_ok_json()
-        .await
+        .query([("query", query)]);
+    if hybrid {
+        request.query([("vector_search", "")])
+    } else {
+        request
+    }
+    .send()
+    .await?
+    .http_ok_json()
+    .await
 }

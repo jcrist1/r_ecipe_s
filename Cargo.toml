@@ -5,6 +5,6 @@ members = [
     "r_ecipe_s_frontend",
     "r_ecipe_s_model",
     "server",
-    "frontend_ls",
+    "frontend_ls", "minilm",
 ]
 

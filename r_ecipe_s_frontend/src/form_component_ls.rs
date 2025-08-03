@@ -1,6 +1,7 @@
+use leptos::error::ErrorBoundary;
 use leptos::logging::log;
-use leptos::*;
-use r_ecipe_s_model::{Ingredient, Quantity, Recipe, COUNT, GRAM, MATCHERS, ML, TSP};
+use leptos::prelude::*;
+use r_ecipe_s_backend::model::{Ingredient, Quantity, Recipe, COUNT, GRAM, MATCHERS, ML, TSP};
 use uuid::Uuid;
 use web_sys::Event;
 
@@ -21,18 +22,16 @@ type QtyRes<T> = std::result::Result<T, QuantityError>;
 type QuantityRes = QtyRes<Quantity>;
 
 #[component]
-pub fn Quantity<S: SignalWith<Value = Quantity> + 'static>(quantity: S) -> impl IntoView {
-    let formatted_quantity = move || {
-        quantity.with(|quantity| match quantity {
-            Quantity::Count(count) => format!("{count}"),
-            Quantity::Tsp(count) => format!("{count} tsp."),
-            Quantity::Gram(count) => format!("{count} g"),
-            Quantity::Ml(count) => format!("{count} ml"),
-        })
-    };
+pub fn Quantity(quantity: Signal<Quantity, LocalStorage>) -> impl IntoView {
+    let formatted_quantity = Signal::derive_local(move || match quantity.get() {
+        Quantity::Count(count) => format!("{count}"),
+        Quantity::Tsp(count) => format!("{count} tsp."),
+        Quantity::Gram(count) => format!("{count} g"),
+        Quantity::Ml(count) => format!("{count} ml"),
+    });
 
     view! {
-        {move || formatted_quantity()}
+        {move || formatted_quantity.get()}
     }
 }
 
@@ -60,8 +59,8 @@ pub fn QuantityForm<F: Fn(Quantity) + 'static>(
     #[prop()] set_quantity_val: F,
     set_quantity: WriteSignal<Quantity>,
 ) -> impl IntoView {
-    let (quant_type, set_type) = create_signal(initial_quantity.label().to_string());
-    let (value, set_value) = create_signal(Ok(initial_quantity.value()));
+    let (quant_type, set_type) = signal(initial_quantity.label().to_string());
+    let (value, set_value) = signal(Ok(initial_quantity.value()));
     let select_handler = move |ev: Event| {
         set_type.set(event_target_value(&ev));
     };
@@ -83,7 +82,7 @@ pub fn QuantityForm<F: Fn(Quantity) + 'static>(
             Err(err) => Err(err),
         }
     };
-    let quantity = quantity.into_signal();
+    let quantity = Signal::derive_local(quantity);
     // let validator = ||
 
     let matchers = MATCHERS.into_iter().collect::<Vec<_>>();
@@ -119,11 +118,11 @@ pub fn QuantityForm<F: Fn(Quantity) + 'static>(
                 if matcher(&initial_quantity) {
                     view! {<option value = label selected>{label}</option> }
                 } else {
-                    view! {<option value = label>{label}</option> }
+                    view! {<option value = label selected>{label}</option> }
                 }
 
             )
-            .collect::<Vec<_>>()
+            .collect_view()
         }
         </select>
     }
@@ -134,12 +133,12 @@ pub struct Editing(bool);
 
 #[component]
 fn Ingredient(ingredient: ReadSignal<Ingredient>) -> impl IntoView {
-    let name = create_memo(move |_| ingredient.get().name);
-    let quantity = create_memo(move |_| ingredient.get().quantity);
+    let name = Signal::derive_local(move || ingredient.get().name);
+    let quantity = Signal::derive_local(move || ingredient.get().quantity);
 
     view! {
         <li>
-            <Quantity quantity = quantity/>" "{ name }
+            <Quantity quantity = {quantity} />" "{ name.get()}
         </li>
     }
 }
@@ -149,7 +148,7 @@ fn IngredientForm(
     set_ingredient: WriteSignal<Ingredient>,
 ) -> impl IntoView {
     let Ingredient { name, quantity } = ingredient;
-    let (_, set_quantity) = create_signal(quantity);
+    let (_, set_quantity) = signal(quantity);
     let text_input = move |ev: Event| {
         let name = event_target_value(&ev);
         set_ingredient.update(|ingr| ingr.name = name);
@@ -221,7 +220,7 @@ pub fn IngredientsForm(
                         class = "btn btn-primary btn-xs btn-wide w-full"
                         on:click = move |_| {
                             ingredients.update(move |ingredients| {
-                                let signals = create_signal( Ingredient {
+                                let signals = signal( Ingredient {
                                     name: "".into(),
                                     quantity: Quantity::Count(0),
                                 });
@@ -260,7 +259,7 @@ impl RecipeWriteState {
         self.description.set(description);
         let ingredients = ingredients
             .into_iter()
-            .map(|ingredient| (uuid::Uuid::new_v4(), create_signal(ingredient)))
+            .map(|ingredient| (uuid::Uuid::new_v4(), signal(ingredient)))
             .collect::<Vec<_>>();
         self.ingredients.set(ingredients);
     }
@@ -296,7 +295,6 @@ impl RecipeReadState {
             ingredients,
             description,
             liked: None,
-            embedding: None,
         }
     }
 
@@ -322,7 +320,6 @@ impl RecipeReadState {
             ingredients,
             description,
             liked: None,
-            embedding: None,
         }
     }
 }
@@ -331,11 +328,10 @@ pub struct RecipeState;
 
 impl RecipeState {
     pub fn state() -> (RecipeReadState, RecipeWriteState) {
-        let (get_ingredients, set_ingredients) =
-            create_signal(Vec::<IndexedIngredientState>::new());
+        let (get_ingredients, set_ingredients) = signal(Vec::<IndexedIngredientState>::new());
 
-        let (get_title, set_title) = create_signal(String::new());
-        let (get_description, set_description) = create_signal(String::new());
+        let (get_title, set_title) = signal(String::new());
+        let (get_description, set_description) = signal(String::new());
         let read_state = RecipeReadState {
             title: get_title,
             ingredients: get_ingredients,
