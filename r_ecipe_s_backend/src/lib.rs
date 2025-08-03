@@ -1,5 +1,14 @@
+#[cfg(feature = "backend")]
 pub mod app_config;
-pub mod auth;
+// #[cfg(feature = "backend")]
+// pub mod auth;
+#[cfg(feature = "backend")]
 pub mod db;
+pub mod model;
+#[cfg(feature = "backend")]
 pub mod recipe_service;
-pub mod search_indexer;
+#[cfg(feature = "backend")]
+pub mod repository;
+
+#[cfg(feature = "backend")]
+pub mod error;

@@ -1,15 +1,13 @@
-use either::Either;
-use frontend_ls::{AsyncMutex, EncodeOnDemand, Error};
-use frontend_ls::{EncodeResponse, MiniLmWorkereComm};
-use gloo_worker::reactor::ReactorBridge;
+use codee::string::{JsonSerdeCodec, JsonSerdeWasmCodec};
+use frontend_ls::Error;
 
 use std::time::Duration;
 
-use leptos::*;
-use logging::{log, warn};
+use leptos::logging::{log, warn};
+use leptos::prelude::*;
+use r_ecipe_s_backend::model::{Recipe, RecipeId, RecipesResponse};
 use r_ecipe_s_frontend::api::*;
 use r_ecipe_s_frontend::form_component_ls::*;
-use r_ecipe_s_model::Recipe;
 
 fn main() {
     _ = console_log::init_with_level(log::Level::Debug);
@@ -27,94 +25,19 @@ fn DivViewWIthText(text: String) -> impl IntoView {
     text
 }
 
-type MiniLmRead = ReadSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
-type MiniLmWrite = WriteSignal<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
-type MiniLmActionValue = RwSignal<Option<Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>>;
-type MiniLmAction = Action<bool, Option<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>>>;
-
-async fn get_minilm(
-    self_host: &str,
-    get_tokenizer: Signal<Option<Vec<u8>>>,
-    set_tokenizer: WriteSignal<Option<Vec<u8>>>,
-    get_weights: ReadSignal<Option<Vec<u8>>>,
-    set_weights: WriteSignal<Option<Vec<u8>>>,
-) -> Result<Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>>, Error> {
-    let tokenizer_bytes = match get_tokenizer.get_untracked() {
-        Some(bytes) => bytes,
-        None => {
-            let bytes = download(self_host, "data.gigapixel.dev", "tokenizer.json")
-                .await
-                .map_err(|err| Error::Msg(format!("{err}")))?;
-            set_tokenizer.set(Some(bytes.clone()));
-            bytes
-        }
-    };
-
-    let model_bytes = match get_weights.get_untracked() {
-        Some(bytes) => bytes,
-        None => {
-            let bytes = download(self_host, "data.gigapixel.dev", "minilm.safetensors")
-                .await
-                .map_err(|err| Error::Msg(format!("{err}")))?;
-            log!("Setting weights");
-            set_weights.set(Some(bytes.clone()));
-            log!("Weights are: {:?}", get_weights.get_untracked().map(|_| ()));
-            bytes
-        }
-    };
-    let minilm = spawn_minilm(tokenizer_bytes, model_bytes);
-    {
-        let mut guard = minilm.lock().await;
-        guard
-            .as_mut()
-            .send_input(MiniLmWorkereComm::TextInput("".into()));
-        guard
-            .as_mut()
-            .next()
-            .await
-            .ok_or_else(|| Error::Msg("Failed to get first vector from MiniLm".into()))?;
-    }
-    Ok::<_, Error>(minilm)
-}
-
-async fn get_embedding(minilm: Option<MiniLmActionValue>, input: String) -> Option<Vec<f32>> {
-    let bridge = minilm?.get_untracked()??;
-    let mut guard = bridge.lock().await;
-    guard
-        .as_mut()
-        .send_input(MiniLmWorkereComm::TextInput(input));
-    let EncodeResponse(output) = guard.as_mut().next().await?;
-    Some(output)
-}
-
-fn spawn_minilm(
-    tokenizer_bytes: Vec<u8>,
-    weights_bytes: Vec<u8>,
-) -> Rc<AsyncMutex<ReactorBridge<EncodeOnDemand>>> {
-    log!("Starting web worker");
-    let bridge = EncodeOnDemand::spawner().spawn("/worker.js");
-    bridge.send_input(MiniLmWorkereComm::ModelData {
-        tokenizer_bytes,
-        weights_bytes,
-    });
-    Rc::new(AsyncMutex::new(bridge))
-}
-
 #[component]
 fn NavBar(
     offset: i64,
-    set_edit: WriteSignal<EditModal>,
-    get_page_action: Action<i64, (i64, Result<RecipesResponse, Error>)>,
+    set_edit: WriteSignal<EditModal, LocalStorage>,
+    get_page_action: Action<i64, (i64, Result<RecipesResponse, Error>), LocalStorage>,
+    ai_pref: Signal<bool>,
     set_ai_pref: WriteSignal<bool>,
-    minilm_action: MiniLmAction,
     api_key: Signal<Option<String>>,
     set_api_key: WriteSignal<Option<String>>,
 ) -> impl IntoView {
-    //let spawn_minilm = move || set_minilm.set(Some(spawn_minilm(&origin.get_untracked())));
-
-    let (_, right_disabled): (View, &str) = match get_page_action.value().get_untracked() {
+    let (_, right_disabled): (_, &str) = match get_page_action.value().get_untracked() {
         Some((offset, Ok(RecipesResponse { total_pages, .. }))) => (
-            view! { <DivViewWIthText  text = format!("of {total_pages}")/>},
+            view! { <DivViewWIthText  text = format!("of {total_pages}")/>}.into_any(),
             if offset >= total_pages {
                 log!("{offset} total: {total_pages}");
                 "btn-disabled"
@@ -124,9 +47,9 @@ fn NavBar(
         ),
         _ => (
             if get_page_action.pending().get() {
-                view! { <Pending />}
+                view! { <Pending />}.into_any()
             } else {
-                view! { <DivViewWIthText text = {String::new()}/>}
+                view! { <DivViewWIthText text = {String::new()}/>}.into_any()
             },
             "btn-disabled",
         ),
@@ -136,64 +59,67 @@ fn NavBar(
         Some((0, _)) => "btn-disabled",
         _ => "",
     };
-    let search_action = create_action(move |query: &String| {
-        let (query, _) = create_signal(query.to_owned());
+    let search_action = Action::new_local(move |query: &String| {
+        let (query, _) = signal_local(query.to_owned());
         async move {
             let query = query.get_untracked();
-            let minilm = minilm_action.value();
-            let vector = get_embedding(Some(minilm), query.clone()).await;
-            let x = search(
-                &query,
-                vector.as_ref().map(<Vec<f32> as AsRef<[f32]>>::as_ref),
-            )
-            .await
-            .map_err(|err| Error::Msg(format!("We got an Error {err}")));
+            let x = search(&query, ai_pref.get())
+                .await
+                .map_err(|err| Error::Msg(format!("We got an Error {err}")));
             log!("Search result: {x:?}");
             x
         }
     });
-    let (searching, set_searching) = create_signal(false);
+    let (searching, set_searching) = signal_local(false);
 
-    let (api_input, set_api_input) = create_signal(false);
+    let (api_input, set_api_input) = signal_local(false);
 
     let search_view = move || {
-        if searching.get() {
-            if search_action.pending().get() {
-                view! { <Pending />}
-            } else if let Some(value) = search_action.value().get() {
-                view! {
-                    <ErrorBoundary
-                        fallback = move | errs| view!{
-                            <div>
-                                "BLOPP"
-                                {move || errs.get().into_iter().map(
-                                        move |err| view!{  {format!("{err:?}")} }
-                                ).collect::<Vec<_>>()}
-                                <Error />
-                            </div>
-                        }
-                    >
-                        {value.map(|boop| {
-                            boop.results.into_iter().map(|x| {
-                                let RecipeWithId {id, data: recipe } = x.recipe;
-                                let title = recipe.name.clone();
-                                view!{ <li class="tabindex-0" on:click=move |_| {
-                                    set_edit.set(EditModal {
-                                        state: Some((id, false,  Either::Left(recipe.clone()))),
-                                    });
-                                    set_searching.set(false);
-                                }>{title}</li>}
-                            })
-                            .collect_view()
+        view! {
+            <Show
+                when= move || { searching.get()}
+                fallback = || view! { <DivViewWIthText text = {"".into()}/>}
+            >
+                <Show
+                    when = move || {!search_action.pending().get() }
+                    fallback =  || view! { <Pending />}
+                >
+                    || {
+                        match search_action.value().get() {
+                            Some(value) =>
+                                view! {
+                                    <ErrorBoundary
+                                        fallback = move | errs| view!{
+                                            <div>
+                                                "BLOPP"
+                                                {move || errs.get().into_iter().map(
+                                                        move |err| view!{  {format!("{err:?}")} }
+                                                ).collect::<Vec<_>>()}
+                                                <Error />
+                                            </div>
+                                        }
+                                    >
+                                        {value.map(|boop| {
+                                            boop.results.into_iter().map(|x| {
+                                                let RecipeWithId {id, data: recipe } = x;
+                                                let title = recipe.name.clone();
+                                                view!{ <li class="tabindex-0" on:click=move |_| {
+                                                    set_edit.set(EditModal {
+                                                        state: Some((id, false,  either::Either::Left(recipe.clone()))),
+                                                    });
+                                                    set_searching.set(false);
+                                                }>{title}</li>}
+                                            })
+                                            .collect_view()
 
-                        })}
-                    </ErrorBoundary>
-                }
-            } else {
-                view! { <DivViewWIthText text = {"".into()} />}
-            }
-        } else {
-            view! { <DivViewWIthText text = {"".into()}/>}
+                                        })}
+                                    </ErrorBoundary>
+                                }.into_any(),
+                            None => view! { <DivViewWIthText text = {"".into()} />}.into_any(),
+                        }
+                    }
+                </Show>
+            </Show>
         }
     };
 
@@ -204,7 +130,8 @@ fn NavBar(
             "collapse"
         }
     };
-    view! {
+    move || {
+        view! {
         <div class = "navbar bg-base-100">
             <div class="flex-none">
                 <details class="dropdown z-30">
@@ -228,34 +155,25 @@ fn NavBar(
                     </li>
                     <li>
 
-            {
-                move || if minilm_action.pending().get() {view! {
-                    <button class="btn-sm">
-                        <div class="loading loading-infinity loading-sm" />
-                    </button>
-                }} else {
-                        minilm_action.value().get().flatten().map(|_| {
-                        view! {
-                            <button class="btn-sm" on:click=move |_| {
-                                set_ai_pref.set(false);
-                                minilm_action.dispatch(false)
-                            }>
-                               Disable AI Search
-                            </button>
-                        }
-                    })
-                    .unwrap_or_else(|| {
-                        view! {
-                            <button class="btn-sm" on:click=move |_| {
-                                set_ai_pref.set(true);
-                                minilm_action.dispatch(true)
-                            }>
-                                Use AI search
-                            </button>
-                        }
-                    })
-                }
-            }
+                    <Show
+                        when= move || {ai_pref.get() }
+                        fallback = move ||
+                            view! {
+                                <button class="btn-sm" on:click=move |_| {
+                                    set_ai_pref.set(true);
+                                }>
+                                    Use AI search
+                                </button>
+                            }
+                    >
+
+
+                        <button class="btn-sm" on:click=move |_| {
+                            set_ai_pref.set(false);
+                        }>
+                            Disable AI Search
+                        </button>
+                    </Show>
                         </li>
                     </ul>
                 </details>
@@ -300,58 +218,20 @@ fn NavBar(
             </div>
         </div>
 
+    }.into_any()
     }
 }
-use std::rc::Rc;
 
-use futures::StreamExt;
-use gloo_worker::Spawnable;
 use leptos_use::storage::use_local_storage;
 
 #[component]
 fn App() -> impl IntoView {
-    let (ai_pref, set_ai_pref, _) = use_local_storage("use_ai", false);
-    let (api_key, set_api_key, _) = use_local_storage::<Option<String>, _>("api_key", None);
-    let (edit, edit_set) = create_signal(EditModal { state: None });
-    let window = web_sys::window().expect("Must be in a windowed i.e. browser setting (You'r not trying to run this in a wasm runtime are you?)");
-    let location = window.location();
-    let origin = location
-        .origin()
-        .expect("Must have an origin for this to work");
-    let origin: &'static str = origin.leak();
-    let (get_tokenizer, set_tokenizer, _) = use_local_storage("tokenizer_bytes", None);
-    let (get_weights, set_weights) = create_signal(None);
+    let (ai_pref, set_ai_pref, _) = use_local_storage::<bool, JsonSerdeWasmCodec>("use_ai");
+    let (api_key, set_api_key, _) =
+        use_local_storage::<Option<String>, JsonSerdeWasmCodec>("api_key");
+    let (edit, edit_set) = signal_local(EditModal { state: None });
 
-    log!("Origin: {origin}");
-
-    let minilm_action = create_action(move |use_minilm: &bool| {
-        let use_minilm = *use_minilm;
-        async move {
-            if use_minilm {
-                match get_minilm(
-                    origin,
-                    get_tokenizer,
-                    set_tokenizer,
-                    get_weights,
-                    set_weights,
-                )
-                .await
-                {
-                    Ok(minilm) => Some(minilm),
-                    Err(err) => {
-                        warn!("Failed to spawn minilm: {err}");
-                        None
-                    }
-                }
-            } else {
-                None
-            }
-        }
-    });
-    minilm_action.dispatch(ai_pref.get());
-    provide_context(minilm_action);
-
-    let get_page_action = create_action(move |offset| {
+    let get_page_action = Action::new_local(move |offset| {
         let offset = *offset;
         async move {
             log!("Getting a page");
@@ -365,7 +245,7 @@ fn App() -> impl IntoView {
     });
 
     let offset = 0;
-    get_page_action.dispatch(offset);
+    get_page_action.dispatch_local(offset);
     view! {
 
     <div class = "bg-base-100 w-full h-screen overflow-auto md:overflow-x-hidden">
@@ -378,7 +258,7 @@ fn App() -> impl IntoView {
                 view! {
                     <div class = "fixed z-[999] h-screen w-full grid grid-cols-1 place-items-center">
                         <div class="modal-box max-w-lg center m-0  p-2 w-full sm:w-7/8 sm:m-4 sm:p-4">
-                            <RecipeView offset  refresh_action = get_page_action id recipe_state=state editing = edit_set edit_flag = editing api_key/>
+                            <RecipeView offset  refresh_action = get_page_action id recipe_state=state editing = edit_set edit_flag = editing api_key />
                         </div>
                         <div class="h-screen modal-backdrop">
                             <button on:click = move |_| edit_set.update(|s| {
@@ -396,7 +276,7 @@ fn App() -> impl IntoView {
             {move || {
                 let page = get_page_action.value().get();
                 page.map(|(offset, page)|{ view! {
-                    <NavBar offset get_page_action set_edit = edit_set set_ai_pref minilm_action set_api_key api_key/>
+                    <NavBar offset get_page_action set_edit = edit_set ai_pref set_ai_pref set_api_key api_key/>
                     <ErrorRecipes offset = offset refresh_action = get_page_action page edit_modal = edit_set api_key/>
                 }})
             }}
@@ -421,9 +301,9 @@ fn TopBar() -> impl IntoView {
 #[component]
 fn ErrorRecipes<B: Clone + 'static>(
     offset: i64,
-    refresh_action: Action<i64, B>,
+    refresh_action: Action<i64, B, LocalStorage>,
     page: Result<RecipesResponse, Error>,
-    edit_modal: WriteSignal<EditModal>,
+    edit_modal: WriteSignal<EditModal, LocalStorage>,
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
     view! {
@@ -442,42 +322,35 @@ fn ErrorRecipes<B: Clone + 'static>(
 }
 
 use futures_timer::Delay;
-use r_ecipe_s_model::RecipeWithId;
-use r_ecipe_s_model::RecipesResponse;
+use r_ecipe_s_backend::model::RecipeWithId;
 
 #[component]
 pub fn RecipeView<B: Clone + 'static>(
-    id: i64,
+    id: RecipeId,
     offset: i64,
-    refresh_action: Action<i64, B>,
-    recipe_state: Either<Recipe, (RecipeReadState, RecipeWriteState)>,
-    editing: WriteSignal<EditModal>,
+    refresh_action: Action<i64, B, LocalStorage>,
+    recipe_state: either::Either<Recipe, (RecipeReadState, RecipeWriteState)>,
+    editing: WriteSignal<EditModal, LocalStorage>,
     edit_flag: bool,
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
-    let (read_toggle, set_toggle) = create_signal(edit_flag);
-    let minilm = use_context::<MiniLmAction>();
+    let (read_toggle, set_toggle) = signal_local(edit_flag);
     let (read_state, write_state) = match recipe_state {
-        Either::Left(recipe) => {
+        either::Either::Left(recipe) => {
             let (read_state, write_state) = RecipeState::state();
             write_state.set(recipe);
             (read_state, write_state)
         }
-        Either::Right(state) => state,
+        either::Either::Right(state) => state,
     };
 
-    let save_action = create_action(move |(id, recipe): &(i64, Recipe)| {
-        let id = *id;
+    let save_action = Action::new_local(move |(id, recipe): &(RecipeId, Recipe)| {
+        let id: RecipeId = *id;
         let recipe = recipe.clone();
         let api_key = api_key.get_untracked();
         async move {
             let api_key = api_key.as_ref().map(AsRef::as_ref);
-            let text = format!("{}\n{}", recipe.name, recipe.description);
-            let embedding = get_embedding(minilm.as_ref().map(Action::value), text).await;
-            let recipe = Recipe {
-                embedding,
-                ..recipe.clone()
-            };
+            let recipe = recipe.clone();
             // todo: remove delay
             Delay::new(Duration::from_secs(1)).await;
 
@@ -487,36 +360,40 @@ pub fn RecipeView<B: Clone + 'static>(
 
     let save_pending = save_action.pending();
     let button_message = move || {
-        if save_pending.get() {
-            view! {
-                <button class = "btn btn-primary btn-xs">
-                    <div class = "loading loading-infinity loading-secondary" />
-                </button>
-            }
-        } else if read_toggle.get() {
-            view! {
-                <button class = "btn btn-primary btn-xs" on:click = move |_| {
-                    let recipe = read_state.get_data_untracked();
-                    save_action.dispatch((id, recipe));
-                    set_toggle.set(false)
-                }>
-                    <div>"submit"</div>
-                </button>
-            }
-        } else {
-            view! {
-                <button class = "btn btn-primary btn-xs" on:click = move |_| {
-                    set_toggle.set(true)
-                }>
-                    <div>"edit"</div>
-                </button>
-            }
+        view! {
+            <Show
+                when = move|| {!save_pending.get()}
+                fallback = move || view! {
+                    <button class = "btn btn-primary btn-xs">
+                        <div class = "loading loading-infinity loading-secondary" />
+                    </button>
+                }
+            >
+                <Show
+                    when = move || {read_toggle.get()}
+                    fallback = move || view! {
+                        <button class = "btn btn-primary btn-xs" on:click = move |_| {
+                            set_toggle.set(true)
+                        }>
+                            <div>"edit"</div>
+                        </button>
+                    }
+                >
+                    <button class = "btn btn-primary btn-xs" on:click = move |_| {
+                        let recipe = read_state.get_data_untracked();
+                        save_action.dispatch((id, recipe));
+                        set_toggle.set(false)
+                    }>
+                        <div>"submit"</div>
+                    </button>
+                </Show>
+            </Show>
         }
     };
 
     let close_action = move || {
         log!("Dispatching");
-        refresh_action.dispatch(offset);
+        refresh_action.dispatch_local(offset);
         editing.update(|u| u.state = None);
     };
     let form = move |read_state, write_state| {
@@ -566,9 +443,9 @@ fn Pending() -> impl IntoView {
 #[derive(Debug, Clone)]
 struct EditModal {
     state: Option<(
-        i64,
+        RecipeId,
         bool,
-        Either<Recipe, (RecipeReadState, RecipeWriteState)>,
+        either::Either<Recipe, (RecipeReadState, RecipeWriteState)>,
     )>,
 }
 
@@ -578,7 +455,6 @@ async fn put_recipe_action(api_key: Option<&str>) -> Result<RecipeWithId, Error>
         ingredients: vec![],
         description: "".into(),
         liked: None,
-        embedding: None,
     };
     // todo: remove delay
     Delay::new(Duration::from_secs(1)).await;
@@ -595,11 +471,11 @@ async fn put_recipe_action(api_key: Option<&str>) -> Result<RecipeWithId, Error>
 fn Recipes<B: Clone + 'static>(
     recipes: Vec<RecipeWithId>,
     offset: i64,
-    refresh_action: Action<i64, B>,
-    edit_modal: WriteSignal<EditModal>,
+    refresh_action: Action<i64, B, LocalStorage>,
+    edit_modal: WriteSignal<EditModal, LocalStorage>,
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
-    let (recipes, set_recipes) = create_signal(
+    let (recipes, set_recipes) = signal_local(
         recipes
             .into_iter()
             .map(move |RecipeWithId { id, data: recipe }| {
@@ -618,7 +494,7 @@ fn Recipes<B: Clone + 'static>(
                 children = move | (id, read_state, write_state)| {
                     let click_action = move || {
                         log!("Time to expand");
-                        edit_modal.update(|modal| modal.state = Some((id, false, Either::Right((read_state, write_state)))));
+                        edit_modal.update(|modal| modal.state = Some((id, false, either::Either::Right((read_state, write_state)))));
                     };
                     view! {
                         <div class = "relative">
@@ -635,10 +511,10 @@ fn Recipes<B: Clone + 'static>(
 
 #[component]
 fn CreateButton(
-    edit_modal: WriteSignal<EditModal>,
+    edit_modal: WriteSignal<EditModal, LocalStorage>,
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
-    let create = create_action(move |_: &()| async move {
+    let create = Action::new_local(move |_: &()| async move {
         let api_key = api_key.get_untracked();
         let api_key = api_key.as_ref();
         put_recipe_action(api_key.map(AsRef::as_ref)).await
@@ -651,29 +527,34 @@ fn CreateButton(
                     <Pending />
                 </button>
             }
+            .into_any()
         } else {
             match create.value().get() {
                 Some(Ok(RecipeWithId { id, .. })) => {
                     let (read_state, write_state) = RecipeState::state();
                     edit_modal.update(|edit| {
-                        edit.state = Some((id, true, Either::Right((read_state, write_state))))
+                        edit.state =
+                            Some((id, true, either::Either::Right((read_state, write_state))))
                     });
                     view! {
                         <button class = "btn btn-sm btn-primary">
                             <Create />
                         </button>
                     }
+                    .into_any()
                 }
                 Some(Err(_)) => view! {
                     <button class = "btn btn-sm btn-primary">
                         <Error />
                     </button>
-                },
+                }
+                .into_any(),
                 None => view! {
-                    <button class = "btn btn-sm btn-primary" on:click=move |_| create.dispatch(()) >
+                    <button class = "btn btn-sm btn-primary" on:click=move |_| {create.dispatch_local(());} >
                         <Create />
                     </button>
-                },
+                }
+                .into_any(),
             }
         }
     };
@@ -703,16 +584,16 @@ enum DeleteStates {
 
 #[component]
 fn Delete<B: Clone + 'static>(
-    id: i64,
+    id: RecipeId,
     offset: i64,
-    refresh_action: Action<i64, B>,
-    set_recipes: WriteSignal<Vec<(i64, RecipeReadState, RecipeWriteState)>>,
+    refresh_action: Action<i64, B, LocalStorage>,
+    set_recipes: WriteSignal<Vec<(RecipeId, RecipeReadState, RecipeWriteState)>, LocalStorage>,
     api_key: Signal<Option<String>>,
 ) -> impl IntoView {
     use DeleteStates as Ds;
-    let (confirming, set_confirming) = create_signal(Ds::AwaitingInput);
+    let (confirming, set_confirming) = signal_local(Ds::AwaitingInput);
 
-    let delete_action = create_action(move |id| {
+    let delete_action = Action::new_local(move |id| {
         let id = *id;
         async move {
             let api_key = api_key.get_untracked();
@@ -724,36 +605,45 @@ fn Delete<B: Clone + 'static>(
         }
     });
     let delete_view = move || {
-        if delete_action.pending().get() {
-            view! {
-                <Pending />
-            }
-        } else if confirming.get() == Ds::Confirming {
-            view! {
-                <ConfirmDelete on:click= move |_| {
-                    set_confirming.set(Ds::Pending);
-                    delete_action.dispatch(id);
-                }/>
-            }
-        } else {
-            match delete_action.value().get() {
-                Some(Err(err)) => {
-                    warn!("failed to delete {err}");
-                    view! { <Error /> }
+        view! {
+            <Show
+                when= move || {!delete_action.pending().get()}
+                fallback = move || view! {
+                    <Pending />
                 }
-                Some(Ok(_)) => {
-                    set_confirming.set(Ds::Deleted);
-                    refresh_action.dispatch(offset);
-                    set_recipes
-                        .update(|recipes| recipes.retain(|(recipe_id, _, _)| *recipe_id != id));
-                    view! {
-                        <DeleteButton />
+            >
+                <Show
+                    when= move || {!(confirming.get() == Ds::Confirming) }
+                    fallback = move ||
+                        view! {
+                            <ConfirmDelete on:click= move |_| {
+                                set_confirming.set(Ds::Pending);
+                                delete_action.dispatch(id);
+                            }/>
+                        }
+                >
+                    move || {
+                        match delete_action.value().get() {
+                            Some(Err(err)) => {
+                                warn!("failed to delete {err}");
+                                view! { <Error /> }.into_any()
+                            }
+                            Some(Ok(_)) => {
+                                set_confirming.set(Ds::Deleted);
+                                refresh_action.dispatch_local(offset);
+                                set_recipes
+                                    .update(|recipes| recipes.retain(|(recipe_id, _, _)| *recipe_id != id));
+                                view! {
+                                    <DeleteButton />
+                                }.into_any()
+                            }
+                            None => view! {
+                                <DeleteButton on:click = move |_| set_confirming.set(Ds::Confirming)/>
+                            }.into_any(),
+                        }
                     }
-                }
-                None => view! {
-                    <DeleteButton on:click = move |_| set_confirming.set(Ds::Confirming)/>
-                },
-            }
+                </Show>
+            </Show>
         }
     };
 

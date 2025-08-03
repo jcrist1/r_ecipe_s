@@ -18,7 +18,7 @@ services:
       R_ECIPE_S_SEARCH_HOST: meilisearch
       R_ECIPE_S_SEARCH_PORT: "7700"
   postgres:
-    image: postgres:14.1-alpine3.15
+    image: custom-pg.latest
     ports: 
       - "5432:5432"
     environment:
